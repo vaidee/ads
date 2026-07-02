@@ -4,7 +4,8 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      # >= 5.27 for the "db.serverless" instance class (Aurora Serverless v2)
+      version = ">= 5.27, < 6.0.0"
     }
     archive = {
       source  = "hashicorp/archive"

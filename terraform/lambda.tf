@@ -35,7 +35,7 @@ data "aws_iam_policy_document" "trigger_ingest_inline" {
   statement {
     sid       = "ReadDbSecret"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.db_secret_arn]
+    resources = [aws_rds_cluster.this.master_user_secret[0].secret_arn]
   }
 }
 
@@ -68,8 +68,8 @@ resource "aws_lambda_function" "trigger_ingest" {
 
   environment {
     variables = {
-      DB_SECRET_ARN     = var.db_secret_arn
-      DB_PROXY_ENDPOINT = var.db_proxy_endpoint
+      DB_SECRET_ARN     = aws_rds_cluster.this.master_user_secret[0].secret_arn
+      DB_PROXY_ENDPOINT = aws_db_proxy.this.endpoint
       DB_NAME           = var.db_name
     }
   }
