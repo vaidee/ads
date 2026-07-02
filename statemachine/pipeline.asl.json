@@ -1,0 +1,58 @@
+{
+  "Comment": "Ad compliance pipeline (SPEC.md section 3.1). Steps 1-2 (TriggerIngest, IsDuplicate) are implemented. Steps 3-9 (IndexVideo onward) are not yet implemented.",
+  "StartAt": "TriggerIngest",
+  "States": {
+    "TriggerIngest": {
+      "Type": "Task",
+      "Comment": "Step 1: receive S3 event or reprocess request, presign an S3 reference, look up the filename in ads",
+      "Resource": "${TriggerIngestFunctionArn}",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "IngestError"
+        }
+      ],
+      "Next": "IsDuplicate"
+    },
+    "IsDuplicate": {
+      "Type": "Choice",
+      "Comment": "Step 2: skip if the filename already exists in ads and this is not a reprocess run",
+      "Choices": [
+        {
+          "Variable": "$.isDuplicate",
+          "BooleanEquals": true,
+          "Next": "LogDuplicateSkip"
+        }
+      ],
+      "Default": "PipelineNotYetImplemented"
+    },
+    "LogDuplicateSkip": {
+      "Type": "Task",
+      "Comment": "Step 2 (Yes branch): log the skipped duplicate and end",
+      "Resource": "${LogDuplicateSkipFunctionArn}",
+      "Next": "DuplicateSkipped"
+    },
+    "DuplicateSkipped": {
+      "Type": "Succeed"
+    },
+    "PipelineNotYetImplemented": {
+      "Type": "Pass",
+      "Comment": "Placeholder for SPEC.md 3.1 steps 3-9 (IndexVideo, WaitForIndexing, RunComplianceAnalysis, ParseAndPersist, ApplySuggestionLogic, PersistFinal, error handling). Replace with the real states in a follow-up change.",
+      "End": true
+    },
+    "IngestError": {
+      "Type": "Fail",
+      "Error": "TriggerIngestFailed",
+      "Cause": "TriggerIngest failed before an ads row was created; see the TriggerIngest CloudWatch Logs for details."
+    }
+  }
+}

@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Ad Content Compliance Validator - ingestion pipeline (SPEC.md section 3.1).
+  Implements steps 1-2 (TriggerIngest, IsDuplicate). Steps 3-9 (IndexVideo
+  onward) are not yet implemented; see statemachine/pipeline.asl.json.
+
+Parameters:
+  IngestBucketName:
+    Type: String
+    Description: S3 bucket watched for ad video drops (automated) and UI uploads (both fire the same S3 event).
+  DbSecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding the Aurora app role credentials (username/password), used to authenticate through RDS Proxy.
+  DbProxyEndpoint:
+    Type: String
+    Description: RDS Proxy endpoint the Lambdas connect through to reach Aurora Postgres.
+  DbName:
+    Type: String
+    Default: ads
+  VpcSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets with a route to the RDS Proxy and (via NAT or VPC endpoints) to S3/Secrets Manager.
+  VpcSecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    VpcConfig:
+      SubnetIds: !Ref VpcSubnetIds
+      SecurityGroupIds: !Ref VpcSecurityGroupIds
+    Environment:
+      Variables:
+        DB_SECRET_ARN: !Ref DbSecretArn
+        DB_PROXY_ENDPOINT: !Ref DbProxyEndpoint
+        DB_NAME: !Ref DbName
+
+Resources:
+  TriggerIngestFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: ["index.js"]
+        Target: node20
+        External: ["@aws-sdk/*"]
+    Properties:
+      CodeUri: ../functions/trigger-ingest/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 1 - receive S3/reprocess event, presign S3 reference, look up filename in ads.
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref IngestBucketName
+        - Statement:
+            - Sid: ReadDbSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecretArn
+
+  LogDuplicateSkipFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: ["index.js"]
+        Target: node20
+        External: ["@aws-sdk/*"]
+    Properties:
+      CodeUri: ../functions/log-duplicate-skip/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 2 (Yes branch) - log a skipped duplicate ingestion.
+      VpcConfig: !Ref AWS::NoValue
+
+  IngestPipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: ad-ingest-pipeline
+      DefinitionUri: ../statemachine/pipeline.asl.json
+      DefinitionSubstitutions:
+        TriggerIngestFunctionArn: !GetAtt TriggerIngestFunction.Arn
+        LogDuplicateSkipFunctionArn: !GetAtt LogDuplicateSkipFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref TriggerIngestFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LogDuplicateSkipFunction
+      Events:
+        IngestObjectCreated:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: ["aws.s3"]
+              detail-type: ["Object Created"]
+              detail:
+                bucket:
+                  name: [!Ref IngestBucketName]
+
+Outputs:
+  StateMachineArn:
+    Value: !Ref IngestPipelineStateMachine
+  TriggerIngestFunctionArn:
+    Value: !GetAtt TriggerIngestFunction.Arn
