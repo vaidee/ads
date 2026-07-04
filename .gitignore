@@ -1,0 +1,11 @@
+node_modules/
+.aws-sam/
+terraform/dist/
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+terraform/*.tfplan
+terraform/backend.hcl
+terraform/*.tfvars
+!terraform/*.tfvars.example

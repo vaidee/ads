@@ -1,0 +1,130 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # required to request the GitHub OIDC token
+  contents: read
+  pull-requests: write # so `plan` can comment on the PR
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  plan:
+    name: terraform plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: npm install (esbuild is invoked by terraform apply/plan via local-exec)
+        run: npm install --no-audit --no-fund
+
+      # Pre-build every Lambda bundle explicitly, rather than relying on
+      # terraform/build.tf's null_resource local-exec to have run first:
+      # local-exec provisioners only execute during `apply`, never `plan`, so a
+      # bare `terraform plan` on a fresh checkout would hit the exact
+      # "missing directory" archive_file error this step exists to avoid.
+      - name: Build Lambda bundles
+        run: |
+          set -e
+          for fn in trigger-ingest index-video check-indexing-status run-compliance-analysis \
+                    parse-and-persist apply-suggestion-logic persist-final handle-pipeline-error \
+                    weekly-eval api; do
+            npx esbuild "functions/$fn/index.js" --bundle --platform=node --target=node20 \
+              --external:@aws-sdk/* --outfile="terraform/dist/$fn/index.js"
+          done
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      # terraform/versions.tf declares a partial `backend "s3" {}` - bucket/
+      # table/region live in repo variables (set once under Settings > Secrets
+      # and variables > Actions), not committed, since they're account-specific.
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.TF_STATE_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_STATE_DYNAMODB_TABLE }}"
+        working-directory: terraform
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: terraform
+
+      # VPC_SUBNET_IDS / VPC_SECURITY_GROUP_IDS repo variables must be set as
+      # HCL/JSON list literals, e.g. ["subnet-abc123","subnet-def456"], since
+      # TF_VAR_* for a list(string) variable is parsed as HCL, not CSV.
+      - name: terraform plan
+        run: terraform plan -input=false
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
+
+  apply:
+    name: terraform apply
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: aws-deploy # requires a manual reviewer approval - configure under repo Settings > Environments
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Build Lambda bundles
+        run: |
+          set -e
+          for fn in trigger-ingest index-video check-indexing-status run-compliance-analysis \
+                    parse-and-persist apply-suggestion-logic persist-final handle-pipeline-error \
+                    weekly-eval api; do
+            npx esbuild "functions/$fn/index.js" --bundle --platform=node --target=node20 \
+              --external:@aws-sdk/* --outfile="terraform/dist/$fn/index.js"
+          done
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.TF_STATE_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_STATE_DYNAMODB_TABLE }}"
+        working-directory: terraform
+
+      - run: terraform apply -input=false -auto-approve
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
