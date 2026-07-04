@@ -72,7 +72,7 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "s3:GetObject", "s3:PutObject", "s3:ListBucket",
       "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem",
     ]
-    resources = ["*"] # tighten to the specific state bucket/table once one exists (see README note below)
+    resources = ["*"] # tighten to your actual state bucket/table ARNs (see terraform/backend.hcl.example)
   }
 
   statement {

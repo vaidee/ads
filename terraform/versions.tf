@@ -1,6 +1,13 @@
 terraform {
   required_version = ">= 1.5"
 
+  # Bucket/table/region can't be variables in a backend block, and they differ
+  # per user/environment, so this is intentionally left partial - run
+  # `terraform init -backend-config=backend.hcl` (see backend.hcl.example) or
+  # pass -backend-config="bucket=..." flags directly. CI does the latter (see
+  # .github/workflows/terraform.yml).
+  backend "s3" {}
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
