@@ -6,6 +6,23 @@ data "aws_s3_bucket" "ingest" {
   bucket = var.ingest_bucket_name
 }
 
+# The UI talks to this bucket directly from the browser - a presigned PUT for
+# uploads (createUploadUrl) and a presigned GET for video playback
+# (getAdDetail) - so it needs its own CORS config distinct from API Gateway's
+# (api.tf). Reuses cors_allow_origins for a single source of truth on "the
+# UI's origin(s)".
+resource "aws_s3_bucket_cors_configuration" "ingest" {
+  bucket = data.aws_s3_bucket.ingest.id
+
+  cors_rule {
+    allowed_origins = var.cors_allow_origins
+    allowed_methods = ["GET", "PUT", "HEAD"]
+    allowed_headers = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
 resource "aws_s3_bucket_notification" "ingest_eventbridge" {
   bucket      = data.aws_s3_bucket.ingest.id
   eventbridge = true

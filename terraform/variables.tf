@@ -94,7 +94,7 @@ variable "api_routes" {
 variable "cors_allow_origins" {
   type        = list(string)
   default     = ["*"]
-  description = "Restrict this to the UI's actual origin(s) once known (see the web_url output, e.g. https://dXXXXXXXXXXXXX.cloudfront.net) - \"*\" is a dev-friendly default, not a production one."
+  description = "Used for both API Gateway's CORS config and the ingest bucket's CORS config (eventbridge.tf) - the UI calls both directly from the browser. Restrict this to the UI's actual origin(s) once known (see the web_url output, e.g. https://dXXXXXXXXXXXXX.cloudfront.net) - \"*\" is a dev-friendly default, not a production one."
 }
 
 variable "weekly_eval_schedule_expression" {

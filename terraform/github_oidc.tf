@@ -178,6 +178,13 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     resources = ["arn:aws:s3:::${var.ingest_bucket_name}"]
   }
   statement {
+    # For aws_s3_bucket_cors_configuration.ingest (eventbridge.tf) - the UI
+    # uploads to and streams from this bucket directly from the browser.
+    sid       = "S3BucketCors"
+    actions   = ["s3:GetBucketCORS", "s3:PutBucketCORS"]
+    resources = ["arn:aws:s3:::${var.ingest_bucket_name}"]
+  }
+  statement {
     # RDS's storage_encrypted + manage_master_user_password both need to use
     # the account's default AWS-managed KMS keys (aws/rds, aws/secretsmanager)
     # - even for the default key, the calling principal still needs its own
