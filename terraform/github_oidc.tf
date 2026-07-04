@@ -13,11 +13,17 @@ variable "github_oidc_subjects" {
   default = [
     "repo:vaidee/ads:ref:refs/heads/main",
     "repo:vaidee/ads:pull_request",
+    # A job that sets `environment:` (the apply job's aws-deploy gate in
+    # .github/workflows/terraform.yml) gets an OIDC token with THIS sub form
+    # instead of the ref:refs/heads/... form above - easy to miss, since the
+    # plan job (no environment:) works fine without it and masks the gap.
+    "repo:vaidee/ads:environment:aws-deploy",
   ]
   description = <<-EOT
     Allowed values of the OIDC token's `sub` claim, matched with StringLike.
-    Defaults to "push to main" and "any pull_request" - broaden this (e.g. add
-    "repo:OWNER/REPO:ref:refs/heads/*") if other branches need to deploy too.
+    Defaults to "push to main", "any pull_request", and the aws-deploy
+    environment - broaden this (e.g. add "repo:OWNER/REPO:ref:refs/heads/*")
+    if other branches need to deploy too.
     See https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect#understanding-the-oidc-token
   EOT
 }
