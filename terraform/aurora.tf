@@ -1,15 +1,13 @@
 # Aurora Serverless v2 (PostgreSQL) + RDS Proxy, in the existing VPC passed via
-# var.vpc_id / var.db_subnet_ids (Tier A - no NAT/internet route needed).
-# schema.sql is NOT applied automatically here:
+# var.vpc_id / var.aurora_subnet_ids. schema.sql is NOT applied automatically here:
 # the cluster lives in private subnets, so `npm run migrate` (db/migrate.js) needs
 # to be run from something with network access to it - a bastion, an SSM Session
 # Manager port-forward, or a one-off Lambda - after this stack is applied. Use the
 # aurora_cluster_endpoint and aurora_master_user_secret_arn outputs below.
 
 resource "aws_db_subnet_group" "aurora" {
-  name = "${var.name_prefix}-aurora"
-  # Tier A (no NAT/internet route) - the DB never needs to reach the internet.
-  subnet_ids = var.db_subnet_ids
+  name       = "${var.name_prefix}-aurora"
+  subnet_ids = var.aurora_subnet_ids
 }
 
 resource "aws_security_group" "aurora" {
@@ -109,11 +107,10 @@ resource "aws_iam_role_policy" "rds_proxy_secret_access" {
 }
 
 resource "aws_db_proxy" "this" {
-  name          = "${var.name_prefix}-proxy"
-  engine_family = "POSTGRESQL"
-  role_arn      = aws_iam_role.rds_proxy.arn
-  # Tier A (no NAT/internet route) - same reasoning as the DB subnet group.
-  vpc_subnet_ids         = var.db_subnet_ids
+  name                   = "${var.name_prefix}-proxy"
+  engine_family          = "POSTGRESQL"
+  role_arn               = aws_iam_role.rds_proxy.arn
+  vpc_subnet_ids         = var.aurora_subnet_ids
   vpc_security_group_ids = [aws_security_group.aurora.id]
   require_tls            = true
 

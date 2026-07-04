@@ -7,12 +7,17 @@
 # variable and its default.
 
 # --- Existing AWS networking (this stack does not create a VPC) ------------
+# aurora_subnet_ids: whatever subnets the Aurora cluster + RDS Proxy are
+#   ALREADY in (check with `aws rds describe-db-subnet-groups` if unsure) -
+#   changing this after the fact requires recreating the DB instance, so
+#   don't repoint it at the Tier A/B subnets below just for tidiness.
 # db_subnet_ids: Tier A - no NAT/internet route, only S3 Gateway Endpoint +
-#   Secrets Manager Interface Endpoint. Used by Aurora/RDS Proxy and every
-#   Lambda except the TwelveLabs callers below.
+#   Secrets Manager Interface Endpoint. Used by every Lambda except the
+#   TwelveLabs callers below.
 # nat_subnet_ids: Tier B - routes 0.0.0.0/0 through a NAT Gateway. Used only
 #   by index-video, check-indexing-status, run-compliance-analysis, and api.
 vpc_id                 = "vpc-xxxxxxxxxxxxxxxxx"
+aurora_subnet_ids      = ["subnet-11111111111111111", "subnet-22222222222222222"]
 db_subnet_ids          = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 nat_subnet_ids         = ["subnet-aaaaaaaaaaaaaaaaa", "subnet-bbbbbbbbbbbbbbbbb"]
 vpc_security_group_ids = ["sg-xxxxxxxxxxxxxxxxx"]
