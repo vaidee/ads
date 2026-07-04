@@ -13,11 +13,17 @@ variable "github_oidc_subjects" {
   default = [
     "repo:vaidee/ads:ref:refs/heads/main",
     "repo:vaidee/ads:pull_request",
+    # A job that sets `environment:` (the apply job's aws-deploy gate in
+    # .github/workflows/terraform.yml) gets an OIDC token with THIS sub form
+    # instead of the ref:refs/heads/... form above - easy to miss, since the
+    # plan job (no environment:) works fine without it and masks the gap.
+    "repo:vaidee/ads:environment:aws-deploy",
   ]
   description = <<-EOT
     Allowed values of the OIDC token's `sub` claim, matched with StringLike.
-    Defaults to "push to main" and "any pull_request" - broaden this (e.g. add
-    "repo:OWNER/REPO:ref:refs/heads/*") if other branches need to deploy too.
+    Defaults to "push to main", "any pull_request", and the aws-deploy
+    environment - broaden this (e.g. add "repo:OWNER/REPO:ref:refs/heads/*")
+    if other branches need to deploy too.
     See https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect#understanding-the-oidc-token
   EOT
 }
@@ -159,12 +165,30 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     # s3:ListBucket is what actually authorizes the HeadBucket call behind the
     # aws_s3_bucket data source (eventbridge.tf) - without it the AWS provider
     # surfaces a confusing "empty result" error rather than an access-denied one.
+    #
+    # NOTE: the IAM action is "PutBucketNotification" (no "Configuration"
+    # suffix) even though the actual S3 API operation it authorizes is called
+    # PutBucketNotificationConfiguration - one of AWS's action-name/API-name
+    # mismatches. Same for GetBucketNotification.
     sid = "S3BucketNotification"
     actions = [
-      "s3:GetBucketNotification", "s3:PutBucketNotificationConfiguration",
+      "s3:GetBucketNotification", "s3:PutBucketNotification",
       "s3:GetBucketLocation", "s3:ListBucket",
     ]
     resources = ["arn:aws:s3:::${var.ingest_bucket_name}"]
+  }
+  statement {
+    # RDS's storage_encrypted + manage_master_user_password both need to use
+    # the account's default AWS-managed KMS keys (aws/rds, aws/secretsmanager)
+    # - even for the default key, the calling principal still needs its own
+    # identity-based KMS permissions, not just the key's resource policy.
+    sid = "Kms"
+    actions = [
+      "kms:DescribeKey", "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant",
+      "kms:Decrypt", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext",
+      "kms:ListAliases", "kms:ListKeys",
+    ]
+    resources = ["*"]
   }
   statement {
     sid       = "Iam"
