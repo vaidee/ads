@@ -64,9 +64,19 @@ async function getTaskStatus(taskId) {
   return { raw, outcome, videoId: result.video_id || null };
 }
 
-// SPEC.md section 4: single combined Pegasus Analyze call (NFR-1).
-async function analyzeVideo(videoId, prompt) {
-  const result = await request('POST', '/analyze', { video_id: videoId, prompt });
+// SPEC.md section 4: single combined Pegasus Analyze call (NFR-1). Pegasus
+// 1.5's /analyze takes a video URL directly (model_name + analysis_mode
+// "general") rather than an indexed video_id - unlike search, generate no
+// longer needs the video's index to have any particular model enabled, and
+// "index_not_supported_for_generate" from the old video_id-based call goes
+// away entirely since indexing isn't involved in this request at all.
+async function analyzeVideo(videoUrl, prompt) {
+  const result = await request('POST', '/analyze', {
+    model_name: 'pegasus1.5',
+    analysis_mode: 'general',
+    video: { type: 'url', url: videoUrl },
+    prompt,
+  });
   return result.data;
 }
 
