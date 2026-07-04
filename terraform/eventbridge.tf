@@ -21,6 +21,12 @@ resource "aws_s3_bucket_cors_configuration" "ingest" {
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
+
+  # Same apply-ordering issue as web.tf: Terraform has no dependency edge
+  # between this and the unrelated IAM policy resource granting the
+  # s3:PutBucketCORS permission it needs, so they can (and did) apply in the
+  # wrong order within the same run.
+  depends_on = [aws_iam_role_policy.github_actions_deploy]
 }
 
 resource "aws_s3_bucket_notification" "ingest_eventbridge" {
