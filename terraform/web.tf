@@ -13,6 +13,14 @@ resource "aws_s3_bucket" "web" {
   # Bucket names are globally unique across all AWS accounts - suffixed with
   # the account id for the same reason the ingest bucket has one baked in.
   bucket = "${var.name_prefix}-web-${data.aws_caller_identity.current.account_id}"
+
+  # Explicit ordering: this resource and the CloudFront OAC below need the
+  # WebBucket/CloudFront statements added to the deploy role's policy
+  # (github_oidc.tf) in the SAME apply that first creates them. Without this,
+  # Terraform has no dependency edge between an unrelated IAM policy resource
+  # and these, so it can (and did) try to create them before the policy
+  # granting permission for that was actually applied.
+  depends_on = [aws_iam_role_policy.github_actions_deploy]
 }
 
 resource "aws_s3_bucket_public_access_block" "web" {
@@ -28,6 +36,8 @@ resource "aws_cloudfront_origin_access_control" "web" {
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
+
+  depends_on = [aws_iam_role_policy.github_actions_deploy]
 }
 
 resource "aws_cloudfront_distribution" "web" {
