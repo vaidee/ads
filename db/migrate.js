@@ -10,6 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { Client } = require('pg');
+const rdsCaCert = require('../functions/shared/rdsCaCert');
 
 async function main() {
   const { DB_HOST, DB_PORT = '5432', DB_NAME, DB_USER, DB_PASSWORD } = process.env;
@@ -26,7 +27,10 @@ async function main() {
     database: DB_NAME,
     user: DB_USER,
     password: DB_PASSWORD,
-    ssl: { rejectUnauthorized: true },
+    // rejectUnauthorized without `ca` fails every connection - Aurora's
+    // certificate is signed by Amazon's own RDS CA, which isn't in Node's
+    // default trust store.
+    ssl: { rejectUnauthorized: true, ca: rdsCaCert },
   });
 
   await client.connect();

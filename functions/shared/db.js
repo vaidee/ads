@@ -2,6 +2,7 @@
 
 const { Pool } = require('pg');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const rdsCaCert = require('./rdsCaCert');
 
 const secretsClient = new SecretsManagerClient({});
 
@@ -29,7 +30,10 @@ async function getPool() {
     database: process.env.DB_NAME,
     user: secret.username,
     password: secret.password,
-    ssl: { rejectUnauthorized: true },
+    // rejectUnauthorized without `ca` fails every connection - RDS Proxy's
+    // certificate is signed by Amazon's own RDS CA, which isn't in Node's
+    // default trust store.
+    ssl: { rejectUnauthorized: true, ca: rdsCaCert },
     max: 2,
     idleTimeoutMillis: 30000,
     // Without this, a network path that silently drops packets (wrong
