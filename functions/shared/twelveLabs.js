@@ -22,6 +22,29 @@ async function getApiKey() {
   return cachedApiKey;
 }
 
+// /analyze streams NDJSON by default - one JSON object per line
+// ({event_type: "stream_start"|"text_generation"|"stream_end", ...}) instead
+// of a single JSON document, which is exactly what makes plain JSON.parse
+// choke partway through. Reassemble the text_generation fragments into the
+// same {data: "..."} shape every other (non-streaming) endpoint returns, so
+// callers don't need to know or care that this one streams.
+function parseResponseBody(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const events = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const data = events
+      .filter((e) => e.event_type === 'text_generation')
+      .map((e) => e.text || '')
+      .join('');
+    return { data };
+  }
+}
+
 async function request(method, path, body, { isFormData = false } = {}) {
   const apiKey = await getApiKey();
   const headers = { 'x-api-key': apiKey };
@@ -39,7 +62,7 @@ async function request(method, path, body, { isFormData = false } = {}) {
   if (!response.ok) {
     throw new Error(`TwelveLabs ${method} ${path} failed (${response.status}): ${text}`);
   }
-  return text ? JSON.parse(text) : {};
+  return text ? parseResponseBody(text) : {};
 }
 
 // SPEC.md 3.1 step 3: submit the video (by presigned URL) for indexing into the
