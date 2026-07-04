@@ -32,6 +32,10 @@ async function getPool() {
     ssl: { rejectUnauthorized: true },
     max: 2,
     idleTimeoutMillis: 30000,
+    // Without this, a network path that silently drops packets (wrong
+    // security group, missing route, etc.) makes pg wait indefinitely - the
+    // Lambda just burns its full timeout with no error to show for it.
+    connectionTimeoutMillis: 8000,
   });
   return pool;
 }
