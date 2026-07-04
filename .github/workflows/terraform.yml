@@ -68,16 +68,18 @@ jobs:
         run: terraform validate
         working-directory: terraform
 
-      # VPC_SUBNET_IDS / VPC_SECURITY_GROUP_IDS repo variables must be set as
-      # HCL/JSON list literals, e.g. ["subnet-abc123","subnet-def456"], since
-      # TF_VAR_* for a list(string) variable is parsed as HCL, not CSV.
+      # DB_SUBNET_IDS / NAT_SUBNET_IDS / VPC_SECURITY_GROUP_IDS repo variables
+      # must be set as HCL/JSON list literals, e.g.
+      # ["subnet-abc123","subnet-def456"], since TF_VAR_* for a list(string)
+      # variable is parsed as HCL, not CSV.
       - name: terraform plan
         run: terraform plan -input=false
         working-directory: terraform
         env:
           TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
           TF_VAR_vpc_id: ${{ vars.VPC_ID }}
-          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_db_subnet_ids: ${{ vars.DB_SUBNET_IDS }}
+          TF_VAR_nat_subnet_ids: ${{ vars.NAT_SUBNET_IDS }}
           TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
           TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
           TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
@@ -124,7 +126,8 @@ jobs:
         env:
           TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
           TF_VAR_vpc_id: ${{ vars.VPC_ID }}
-          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_db_subnet_ids: ${{ vars.DB_SUBNET_IDS }}
+          TF_VAR_nat_subnet_ids: ${{ vars.NAT_SUBNET_IDS }}
           TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
           TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
           TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}

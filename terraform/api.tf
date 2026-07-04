@@ -79,7 +79,9 @@ resource "aws_lambda_function" "api" {
   source_code_hash = data.archive_file.api.output_base64sha256
 
   vpc_config {
-    subnet_ids         = var.vpc_subnet_ids
+    # NAT-routed (Tier B): the semantic-search fallback route calls TwelveLabs
+    # directly, same as index-video/check-indexing-status/run-compliance-analysis.
+    subnet_ids         = var.nat_subnet_ids
     security_group_ids = var.vpc_security_group_ids
   }
 

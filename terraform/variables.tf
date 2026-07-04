@@ -19,14 +19,19 @@ variable "vpc_id" {
   description = "Existing VPC that Aurora, the RDS Proxy, and the TriggerIngest Lambda are deployed into."
 }
 
-variable "vpc_subnet_ids" {
+variable "db_subnet_ids" {
   type        = list(string)
-  description = "Private subnets (in var.vpc_id) with a route to S3/Secrets Manager (via NAT or VPC endpoints). Used for the TriggerIngest Lambda, the Aurora DB subnet group, and the RDS Proxy."
+  description = "Private subnets (in var.vpc_id) with NO route to the internet/NAT - only a route to the S3 Gateway Endpoint and (via the Secrets Manager Interface Endpoint's Private DNS) Secrets Manager. Used for the Aurora DB subnet group, the RDS Proxy, and every Lambda that doesn't call TwelveLabs (trigger-ingest, parse-and-persist, apply-suggestion-logic, persist-final, handle-pipeline-error, weekly-eval)."
+}
+
+variable "nat_subnet_ids" {
+  type        = list(string)
+  description = "Private subnets (in var.vpc_id) that route 0.0.0.0/0 through a NAT Gateway. Used only by the Lambdas that call TwelveLabs over the public internet: index-video, check-indexing-status, run-compliance-analysis, and api (semantic-search fallback)."
 }
 
 variable "vpc_security_group_ids" {
   type        = list(string)
-  description = "Security groups attached to the TriggerIngest Lambda's ENIs. Granted ingress to the Aurora/RDS Proxy security group on port 5432."
+  description = "Security group attached to every pipeline/api Lambda's ENIs, regardless of subnet tier. Granted ingress to the Aurora/RDS Proxy security group on port 5432, and must also be allowed inbound 443 on the Secrets Manager VPC endpoint's security group."
 }
 
 variable "log_retention_days" {

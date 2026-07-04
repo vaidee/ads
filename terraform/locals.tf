@@ -23,4 +23,11 @@ locals {
 
   needs_tl_secret = toset(["index-video", "check-indexing-status", "run-compliance-analysis"])
   needs_s3_read   = toset(["trigger-ingest"])
+
+  # Only these call TwelveLabs over the public internet, so only these need a
+  # NAT-routed subnet (Tier B). Everything else - including trigger-ingest,
+  # which only calls S3 (via the Gateway Endpoint) and Secrets Manager (via
+  # the Interface Endpoint, reachable VPC-wide since it has Private DNS
+  # enabled) - stays in the DB-only subnets (Tier A) with no internet route.
+  nat_functions = toset(["index-video", "check-indexing-status", "run-compliance-analysis"])
 }
