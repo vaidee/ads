@@ -1,11 +1,11 @@
-# Copy to backend.hcl (gitignored) and fill in your actual S3 bucket/DynamoDB
-# table, then run: terraform init -backend-config=backend.hcl
+# Copy to backend.hcl (gitignored) and run:
+#   terraform init -backend-config=backend.hcl
 #
 # The DynamoDB table needs a partition key named "LockID" (String) - the name
 # Terraform's S3 backend hardcodes and expects to already exist.
 
-bucket         = "your-terraform-state-bucket"
+bucket         = "ads-statefile-store"
 key            = "ads/terraform.tfstate"
-region         = "us-east-1"
-dynamodb_table = "your-terraform-lock-table"
+region         = "ap-southeast-1"
+dynamodb_table = "ads-state-lock-table"
 encrypt        = true

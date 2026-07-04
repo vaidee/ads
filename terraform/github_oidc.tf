@@ -22,6 +22,26 @@ variable "github_oidc_subjects" {
   EOT
 }
 
+variable "tf_state_bucket" {
+  type        = string
+  default     = "ads-statefile-store"
+  description = "S3 bucket holding Terraform state - must match versions.tf's backend config (see backend.hcl.example)."
+}
+
+variable "tf_state_dynamodb_table" {
+  type        = string
+  default     = "ads-state-lock-table"
+  description = "DynamoDB table used for state locking - must match versions.tf's backend config."
+}
+
+variable "tf_state_region" {
+  type        = string
+  default     = "ap-southeast-1"
+  description = "Region the state bucket/table live in - must match versions.tf's backend config."
+}
+
+data "aws_caller_identity" "current" {}
+
 data "tls_certificate" "github_actions" {
   url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
 }
@@ -67,12 +87,21 @@ resource "aws_iam_role" "github_actions_deploy" {
 # `terraform apply` under this same role once bootstrapped by hand once.
 data "aws_iam_policy_document" "github_actions_deploy" {
   statement {
-    sid = "TerraformState"
-    actions = [
-      "s3:GetObject", "s3:PutObject", "s3:ListBucket",
-      "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem",
+    sid       = "TerraformStateObjects"
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}/*"]
+  }
+  statement {
+    sid       = "TerraformStateBucketList"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
+  }
+  statement {
+    sid     = "TerraformStateLock"
+    actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    resources = [
+      "arn:aws:dynamodb:${var.tf_state_region}:${data.aws_caller_identity.current.account_id}:table/${var.tf_state_dynamodb_table}"
     ]
-    resources = ["*"] # tighten to your actual state bucket/table ARNs (see terraform/backend.hcl.example)
   }
 
   statement {
