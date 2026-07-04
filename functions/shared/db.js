@@ -1,8 +1,17 @@
 'use strict';
 
+const tls = require('node:tls');
 const { Pool } = require('pg');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const rdsCaCert = require('./rdsCaCert');
+
+// RDS Proxy's certificate chains up to a publicly-trusted root (Amazon Trust
+// Services) already in Node's default trust store - unlike the Aurora cluster
+// endpoint's own certificate, which chains up to Amazon's private RDS CA.
+// Passing `ca` to node's tls module REPLACES the default trust store rather
+// than extending it, so the RDS-specific bundle alone validates the cluster
+// endpoint but breaks the proxy endpoint. Concatenating both covers either.
+const trustedCas = [...tls.rootCertificates, rdsCaCert];
 
 const secretsClient = new SecretsManagerClient({});
 
@@ -30,10 +39,7 @@ async function getPool() {
     database: process.env.DB_NAME,
     user: secret.username,
     password: secret.password,
-    // rejectUnauthorized without `ca` fails every connection - RDS Proxy's
-    // certificate is signed by Amazon's own RDS CA, which isn't in Node's
-    // default trust store.
-    ssl: { rejectUnauthorized: true, ca: rdsCaCert },
+    ssl: { rejectUnauthorized: true, ca: trustedCas },
     max: 2,
     idleTimeoutMillis: 30000,
     // Without this, a network path that silently drops packets (wrong
