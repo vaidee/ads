@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars (gitignored - never commit the filled-in version,
+# it ends up holding a real API key) and fill in real values.
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Everything below is required (no default in variables.tf/twelvelabs.tf).
+# See variables.tf, twelvelabs.tf, and github_oidc.tf for every optional
+# variable and its default.
+
+# --- Existing AWS networking (this stack does not create a VPC) ------------
+vpc_id                  = "vpc-xxxxxxxxxxxxxxxxx"
+vpc_subnet_ids          = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
+vpc_security_group_ids  = ["sg-xxxxxxxxxxxxxxxxx"]
+
+# --- Existing S3 bucket watched for ad uploads ------------------------------
+ingest_bucket_name = "your-ads-ingest-bucket"
+
+# --- TwelveLabs (external SaaS - created out-of-band, not by Terraform) ----
+tl_api_key   = "tlk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # sensitive - keep this file out of git
+tl_index_id  = "6xxxxxxxxxxxxxxxxxxxxxxx"
+
+# --- Optional overrides (defaults shown are usually fine) -------------------
+# name_prefix          = "ads-ingest"
+# db_name              = "ads"
+# aurora_engine_version = "16.4"
+# aurora_min_capacity  = 0.5
+# aurora_max_capacity  = 4
+# skip_final_snapshot  = true   # set false once this is a real environment
+# cors_allow_origins   = ["https://your-ui-domain.example.com"]
+# github_repo          = "vaidee/ads"
+# tf_state_bucket          = "ads-statefile-store"
+# tf_state_dynamodb_table  = "ads-state-lock-table"
+# tf_state_region          = "ap-southeast-1"

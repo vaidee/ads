@@ -7,3 +7,5 @@ terraform/.terraform.lock.hcl
 *.tfstate.*
 terraform/*.tfplan
 terraform/backend.hcl
+terraform/*.tfvars
+!terraform/*.tfvars.example
