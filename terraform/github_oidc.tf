@@ -196,6 +196,19 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     resources = ["*"]
   }
   statement {
+    # Scoped to just the UI's own bucket (web.tf) - full control since
+    # Terraform owns this bucket outright (create/policy/sync/etc.), unlike
+    # the ingest bucket which pre-exists and is only partially managed here.
+    sid       = "WebBucket"
+    actions   = ["s3:*"]
+    resources = ["arn:aws:s3:::${var.name_prefix}-web-*", "arn:aws:s3:::${var.name_prefix}-web-*/*"]
+  }
+  statement {
+    sid       = "CloudFront"
+    actions   = ["cloudfront:*"]
+    resources = ["*"]
+  }
+  statement {
     sid       = "Sts"
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]

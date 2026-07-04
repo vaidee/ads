@@ -84,7 +84,7 @@ variable "api_routes" {
 variable "cors_allow_origins" {
   type        = list(string)
   default     = ["*"]
-  description = "Restrict this to the UI's actual origin(s) once known - \"*\" is a dev-friendly default, not a production one."
+  description = "Restrict this to the UI's actual origin(s) once known (see the web_url output, e.g. https://dXXXXXXXXXXXXX.cloudfront.net) - \"*\" is a dev-friendly default, not a production one."
 }
 
 variable "weekly_eval_schedule_expression" {
