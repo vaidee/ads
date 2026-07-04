@@ -22,15 +22,17 @@ async function getApiKey() {
   return cachedApiKey;
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, { isFormData = false } = {}) {
   const apiKey = await getApiKey();
+  const headers = { 'x-api-key': apiKey };
+  // Let fetch set Content-Type itself for FormData bodies - it needs to
+  // include the multipart boundary, which we have no way to compute by hand.
+  if (!isFormData) headers['Content-Type'] = 'application/json';
+
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: {
-      'x-api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
 
   const text = await response.text();
@@ -42,8 +44,13 @@ async function request(method, path, body) {
 
 // SPEC.md 3.1 step 3: submit the video (by presigned URL) for indexing into the
 // app's single persistent index (NFR-1 - one index, reused across all videos).
+// /tasks specifically rejects application/json ("content_type_invalid") -
+// unlike the other endpoints below, it requires multipart/form-data.
 async function createIndexingTask(indexId, videoUrl) {
-  const result = await request('POST', '/tasks', { index_id: indexId, url: videoUrl });
+  const form = new FormData();
+  form.append('index_id', indexId);
+  form.append('url', videoUrl);
+  const result = await request('POST', '/tasks', form, { isFormData: true });
   return { taskId: result._id || result.id };
 }
 
