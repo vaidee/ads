@@ -3,7 +3,14 @@
 const { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-const s3Client = new S3Client({});
+// requestChecksumCalculation defaults to 'WHEN_SUPPORTED' in current SDK
+// versions, which auto-attaches a flexible checksum (x-amz-checksum-crc32) to
+// every PutObjectCommand - including presigned ones. getSignedUrl has to bake
+// that checksum into the signature before the real body exists, so it signs
+// the checksum of an empty payload; the browser's actual PUT (real video
+// bytes) then fails S3's checksum/signature validation with 403. Only compute
+// checksums when a caller explicitly opts in via ChecksumAlgorithm.
+const s3Client = new S3Client({ requestChecksumCalculation: 'WHEN_REQUIRED' });
 
 async function headObject(bucket, key) {
   return s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
