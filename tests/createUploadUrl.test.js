@@ -39,6 +39,11 @@ test('returns a presigned URL and required headers for a valid request', async (
 
   const body = JSON.parse(res.body);
   assert.equal(body.uploadUrl, 'https://example.com/presigned-put');
-  assert.equal(body.requiredHeaders['x-amz-meta-source'], 'manual_upload');
-  assert.equal(body.requiredHeaders['x-amz-meta-duration-seconds'], '90');
+  assert.equal(body.requiredHeaders['Content-Type'], 'video/mp4');
+  // x-amz-meta-* must NOT be required as headers - getPresignedPutUrl already
+  // hoists them into the URL's query string, and sending them again as
+  // literal headers makes S3 reject the request as tampered (see
+  // createUploadUrl.js's comment).
+  assert.equal(body.requiredHeaders['x-amz-meta-source'], undefined);
+  assert.equal(body.requiredHeaders['x-amz-meta-duration-seconds'], undefined);
 });

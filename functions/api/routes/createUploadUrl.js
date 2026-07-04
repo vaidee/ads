@@ -10,7 +10,11 @@ const HARD_MAX_DURATION_SECONDS = 5 * 60;
 // POST /ads/upload-url (FR-2, FR-3): server-side duplicate + 5-minute hard cap
 // check, then a pre-signed S3 PUT URL. Duration/source are baked into the S3
 // object's metadata so TriggerIngest (step 1) can recover them from the S3
-// event alone - the browser must send back the exact x-amz-meta-* headers below.
+// event alone. getPresignedPutUrl hoists x-amz-meta-* into the URL's own
+// query string, so the browser must NOT also send them as headers - S3's
+// SigV4 validation rejects a request where an x-amz-* value appears as both
+// a query param and a literal header ("headers present ... not signed").
+// Content-Type isn't hoisted, so it still needs to go through as a header.
 module.exports = async (event) => {
   let body;
   try {
@@ -50,8 +54,6 @@ module.exports = async (event) => {
     contentType,
     requiredHeaders: {
       'Content-Type': contentType,
-      'x-amz-meta-source': 'manual_upload',
-      'x-amz-meta-duration-seconds': roundedDuration,
     },
   });
 };
