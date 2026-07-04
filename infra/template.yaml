@@ -1,9 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Ad Content Compliance Validator - ingestion pipeline (SPEC.md section 3.1).
-  Implements steps 1-2 (TriggerIngest, IsDuplicate). Steps 3-9 (IndexVideo
-  onward) are not yet implemented; see statemachine/pipeline.asl.json.
+  Ad Content Compliance Validator - ingestion pipeline only (SPEC.md section
+  3.1, all 9 steps). The API layer (section 6), Cognito, and the weekly eval
+  Lambda (section 8) are Terraform-only (see terraform/) - this template is
+  kept for anyone who prefers SAM/CloudFormation for the pipeline half.
 
 Parameters:
   IngestBucketName:
@@ -23,6 +24,15 @@ Parameters:
     Description: Private subnets with a route to the RDS Proxy and (via NAT or VPC endpoints) to S3/Secrets Manager.
   VpcSecurityGroupIds:
     Type: List<AWS::EC2::SecurityGroup::Id>
+  TlApiKeySecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding the TwelveLabs API key (plain-text secret, not JSON).
+  TlIndexId:
+    Type: String
+    Description: TwelveLabs index id, created out-of-band - one persistent index reused for every video (NFR-1).
+  TlApiBaseUrl:
+    Type: String
+    Default: https://api.twelvelabs.io/v1.3
 
 Globals:
   Function:
@@ -74,6 +84,144 @@ Resources:
       Description: SPEC.md 3.1 step 2 (Yes branch) - log a skipped duplicate ingestion.
       VpcConfig: !Ref AWS::NoValue
 
+  IndexVideoFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/index-video/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 3 - submit to TwelveLabs, create/reset the ads row with status = PROCESSING.
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !Ref DbSecretArn
+          DB_PROXY_ENDPOINT: !Ref DbProxyEndpoint
+          DB_NAME: !Ref DbName
+          TL_API_KEY_SECRET_ARN: !Ref TlApiKeySecretArn
+          TL_API_BASE_URL: !Ref TlApiBaseUrl
+          TL_INDEX_ID: !Ref TlIndexId
+      Policies:
+        - Statement:
+            - Sid: ReadSecrets
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: [!Ref DbSecretArn, !Ref TlApiKeySecretArn]
+
+  CheckIndexingStatusFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/check-indexing-status/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 4 - one TwelveLabs task-status check per Wait/Choice loop iteration.
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !Ref DbSecretArn
+          DB_PROXY_ENDPOINT: !Ref DbProxyEndpoint
+          DB_NAME: !Ref DbName
+          TL_API_KEY_SECRET_ARN: !Ref TlApiKeySecretArn
+          TL_API_BASE_URL: !Ref TlApiBaseUrl
+          TL_INDEX_ID: !Ref TlIndexId
+      Policies:
+        - Statement:
+            - Sid: ReadSecrets
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: [!Ref DbSecretArn, !Ref TlApiKeySecretArn]
+
+  RunComplianceAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/run-compliance-analysis/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 5 - single combined Pegasus Analyze call (NFR-1).
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !Ref DbSecretArn
+          DB_PROXY_ENDPOINT: !Ref DbProxyEndpoint
+          DB_NAME: !Ref DbName
+          TL_API_KEY_SECRET_ARN: !Ref TlApiKeySecretArn
+          TL_API_BASE_URL: !Ref TlApiBaseUrl
+          TL_INDEX_ID: !Ref TlIndexId
+      Policies:
+        - Statement:
+            - Sid: ReadSecrets
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: [!Ref DbSecretArn, !Ref TlApiKeySecretArn]
+
+  ParseAndPersistFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/parse-and-persist/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 6 - defensively parse the Pegasus response, persist raw/normalized results.
+      Policies:
+        - Statement:
+            - Sid: ReadDbSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecretArn
+
+  ApplySuggestionLogicFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/apply-suggestion-logic/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 7 - per-flag computed_verdict + overall status from compliance_rules.
+      Policies:
+        - Statement:
+            - Sid: ReadDbSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecretArn
+
+  PersistFinalFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/persist-final/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 8 - update the ads row and insert the status_history entry.
+      Policies:
+        - Statement:
+            - Sid: ReadDbSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecretArn
+
+  HandlePipelineErrorFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties: { EntryPoints: ["index.js"], Target: node20, External: ["@aws-sdk/*"] }
+    Properties:
+      CodeUri: ../functions/handle-pipeline-error/
+      Handler: index.handler
+      Description: SPEC.md 3.1 step 9 - status = ERROR, error_message set, retry_count incremented (NFR-5).
+      Policies:
+        - Statement:
+            - Sid: ReadDbSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbSecretArn
+
   IngestPipelineStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
@@ -82,11 +230,23 @@ Resources:
       DefinitionSubstitutions:
         TriggerIngestFunctionArn: !GetAtt TriggerIngestFunction.Arn
         LogDuplicateSkipFunctionArn: !GetAtt LogDuplicateSkipFunction.Arn
+        IndexVideoFunctionArn: !GetAtt IndexVideoFunction.Arn
+        CheckIndexingStatusFunctionArn: !GetAtt CheckIndexingStatusFunction.Arn
+        RunComplianceAnalysisFunctionArn: !GetAtt RunComplianceAnalysisFunction.Arn
+        ParseAndPersistFunctionArn: !GetAtt ParseAndPersistFunction.Arn
+        ApplySuggestionLogicFunctionArn: !GetAtt ApplySuggestionLogicFunction.Arn
+        PersistFinalFunctionArn: !GetAtt PersistFinalFunction.Arn
+        HandlePipelineErrorFunctionArn: !GetAtt HandlePipelineErrorFunction.Arn
       Policies:
-        - LambdaInvokePolicy:
-            FunctionName: !Ref TriggerIngestFunction
-        - LambdaInvokePolicy:
-            FunctionName: !Ref LogDuplicateSkipFunction
+        - LambdaInvokePolicy: { FunctionName: !Ref TriggerIngestFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref LogDuplicateSkipFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref IndexVideoFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref CheckIndexingStatusFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref RunComplianceAnalysisFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref ParseAndPersistFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref ApplySuggestionLogicFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref PersistFinalFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref HandlePipelineErrorFunction }
       Events:
         IngestObjectCreated:
           Type: EventBridgeRule

@@ -1,28 +1,35 @@
-# TriggerIngest requires npm dependencies (pg) and the shared modules it imports
-# via relative paths, so it's bundled with esbuild before zipping - mirrors the
-# BuildMethod: esbuild config in infra/template.yaml (SAM).
-# LogDuplicateSkip has no dependencies or imports, so it's zipped as-is.
+# Bundles every function in local.bundled_functions with esbuild (pulls in `pg`
+# and functions/shared/* via relative imports - mirrors infra/template.yaml's
+# BuildMethod: esbuild for SAM). log-duplicate-skip has no dependencies, so it's
+# zipped as-is. api.tf handles the "api" Lambda's build separately.
 
-resource "null_resource" "build_trigger_ingest" {
+resource "null_resource" "build" {
+  for_each = toset(local.bundled_functions)
+
   triggers = {
-    index_hash      = filesha256("${path.module}/../functions/trigger-ingest/index.js")
-    normalize_hash  = filesha256("${path.module}/../functions/trigger-ingest/normalizeIngestEvent.js")
-    db_hash         = filesha256("${path.module}/../functions/shared/db.js")
-    s3_hash         = filesha256("${path.module}/../functions/shared/s3.js")
-    ads_repo_hash   = filesha256("${path.module}/../functions/shared/adsRepo.js")
+    # Any function file changing invalidates every build - these all pull from
+    # functions/shared/* via relative imports esbuild resolves at bundle time,
+    # so a shared-file change needs to be caught even though it's not in
+    # each.key's own directory.
+    functions_hash = sha1(join("", [
+      for f in fileset("${path.module}/../functions", "**/*.js") :
+      filesha256("${path.module}/../functions/${f}")
+    ]))
   }
 
   provisioner "local-exec" {
     working_dir = "${path.module}/.."
-    command     = "npx esbuild functions/trigger-ingest/index.js --bundle --platform=node --target=node20 --external:@aws-sdk/* --outfile=terraform/dist/trigger-ingest/index.js"
+    command     = "npx esbuild functions/${each.key}/index.js --bundle --platform=node --target=node20 --external:@aws-sdk/* --outfile=terraform/dist/${each.key}/index.js"
   }
 }
 
-data "archive_file" "trigger_ingest" {
+data "archive_file" "bundled" {
+  for_each = toset(local.bundled_functions)
+
   type        = "zip"
-  source_dir  = "${path.module}/dist/trigger-ingest"
-  output_path = "${path.module}/dist/trigger-ingest.zip"
-  depends_on  = [null_resource.build_trigger_ingest]
+  source_dir  = "${path.module}/dist/${each.key}"
+  output_path = "${path.module}/dist/${each.key}.zip"
+  depends_on  = [null_resource.build]
 }
 
 data "archive_file" "log_duplicate_skip" {

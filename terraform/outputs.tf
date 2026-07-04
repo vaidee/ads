@@ -3,7 +3,7 @@ output "state_machine_arn" {
 }
 
 output "trigger_ingest_function_arn" {
-  value = aws_lambda_function.trigger_ingest.arn
+  value = aws_lambda_function.bundled["trigger-ingest"].arn
 }
 
 output "log_duplicate_skip_function_arn" {
@@ -22,4 +22,22 @@ output "aurora_master_user_secret_arn" {
 
 output "db_proxy_endpoint" {
   value = aws_db_proxy.this.endpoint
+}
+
+output "api_endpoint" {
+  description = "Base URL the UI calls - API Gateway HTTP API's auto-generated $default stage invoke URL."
+  value       = aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.this.id
+}
+
+output "cognito_user_pool_client_id" {
+  value = aws_cognito_user_pool_client.web.id
+}
+
+output "tl_api_key_secret_arn" {
+  description = "Update this secret's value in Secrets Manager (or re-apply with a new tl_api_key) if the TwelveLabs key rotates."
+  value       = aws_secretsmanager_secret.tl_api_key.arn
 }

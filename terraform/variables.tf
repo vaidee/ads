@@ -61,3 +61,34 @@ variable "skip_final_snapshot" {
   default     = true
   description = "Set to false for production so a final snapshot is taken on destroy/replace."
 }
+
+variable "api_routes" {
+  type = list(string)
+  default = [
+    "GET /ads",
+    "GET /ads/search",
+    "GET /ads/export",
+    "GET /ads/{id}",
+    "POST /ads/{id}/approve",
+    "POST /ads/{id}/reject",
+    "POST /ads/{id}/sendback",
+    "POST /ads/{id}/reprocess",
+    "POST /ads/{id}/comments",
+    "POST /ads/{id}/publish",
+    "POST /ads/upload-url",
+    "GET /eval/weekly",
+  ]
+  description = "SPEC.md section 6 routes, all proxied to the single api Lambda."
+}
+
+variable "cors_allow_origins" {
+  type        = list(string)
+  default     = ["*"]
+  description = "Restrict this to the UI's actual origin(s) once known - \"*\" is a dev-friendly default, not a production one."
+}
+
+variable "weekly_eval_schedule_expression" {
+  type        = string
+  default     = "cron(0 6 ? * MON *)"
+  description = "SPEC.md section 8.1 - runs Monday mornings and evaluates the just-completed Mon-Sun week."
+}

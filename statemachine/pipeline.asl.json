@@ -1,5 +1,5 @@
 {
-  "Comment": "Ad compliance pipeline (SPEC.md section 3.1). Steps 1-2 (TriggerIngest, IsDuplicate) are implemented. Steps 3-9 (IndexVideo onward) are not yet implemented.",
+  "Comment": "Ad compliance pipeline (SPEC.md section 3.1) - all 9 steps.",
   "StartAt": "TriggerIngest",
   "States": {
     "TriggerIngest": {
@@ -7,33 +7,16 @@
       "Comment": "Step 1: receive S3 event or reprocess request, presign an S3 reference, look up the filename in ads",
       "Resource": "${TriggerIngestFunctionArn}",
       "Retry": [
-        {
-          "ErrorEquals": ["States.TaskFailed"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 2,
-          "BackoffRate": 2.0
-        }
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
       ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.error",
-          "Next": "IngestError"
-        }
-      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
       "Next": "IsDuplicate"
     },
     "IsDuplicate": {
       "Type": "Choice",
       "Comment": "Step 2: skip if the filename already exists in ads and this is not a reprocess run",
-      "Choices": [
-        {
-          "Variable": "$.isDuplicate",
-          "BooleanEquals": true,
-          "Next": "LogDuplicateSkip"
-        }
-      ],
-      "Default": "PipelineNotYetImplemented"
+      "Choices": [{ "Variable": "$.isDuplicate", "BooleanEquals": true, "Next": "LogDuplicateSkip" }],
+      "Default": "IndexVideo"
     },
     "LogDuplicateSkip": {
       "Type": "Task",
@@ -41,18 +24,109 @@
       "Resource": "${LogDuplicateSkipFunctionArn}",
       "Next": "DuplicateSkipped"
     },
-    "DuplicateSkipped": {
-      "Type": "Succeed"
+    "DuplicateSkipped": { "Type": "Succeed" },
+
+    "IndexVideo": {
+      "Type": "Task",
+      "Comment": "Step 3: submit to TwelveLabs, get a task id, create/reset the ads row with status = PROCESSING",
+      "Resource": "${IndexVideoFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "WaitBeforeIndexingCheck"
     },
-    "PipelineNotYetImplemented": {
+
+    "WaitBeforeIndexingCheck": {
+      "Type": "Wait",
+      "Comment": "Step 4: polling loop - part 1 of 2 (Wait state)",
+      "Seconds": 15,
+      "Next": "CheckIndexingStatus"
+    },
+    "CheckIndexingStatus": {
+      "Type": "Task",
+      "Comment": "Step 4: polling loop - part 2 of 2 (check TwelveLabs task status)",
+      "Resource": "${CheckIndexingStatusFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "IndexingStatusChoice"
+    },
+    "IndexingStatusChoice": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.tlTaskStatus", "StringEquals": "ready", "Next": "RunComplianceAnalysis" },
+        { "Variable": "$.tlTaskStatus", "StringEquals": "failed", "Next": "IndexingFailed" },
+        { "Variable": "$.pollCount", "NumericGreaterThanEquals": 40, "Next": "IndexingTimedOut" }
+      ],
+      "Default": "WaitBeforeIndexingCheck"
+    },
+    "IndexingFailed": {
       "Type": "Pass",
-      "Comment": "Placeholder for SPEC.md 3.1 steps 3-9 (IndexVideo, WaitForIndexing, RunComplianceAnalysis, ParseAndPersist, ApplySuggestionLogic, PersistFinal, error handling). Replace with the real states in a follow-up change.",
-      "End": true
+      "Result": { "Error": "IndexingFailed", "Cause": "TwelveLabs reported the indexing task failed" },
+      "ResultPath": "$.error",
+      "Next": "HandlePipelineError"
     },
-    "IngestError": {
+    "IndexingTimedOut": {
+      "Type": "Pass",
+      "Result": {
+        "Error": "IndexingTimedOut",
+        "Cause": "TwelveLabs indexing did not report ready/failed within the polling limit"
+      },
+      "ResultPath": "$.error",
+      "Next": "HandlePipelineError"
+    },
+
+    "RunComplianceAnalysis": {
+      "Type": "Task",
+      "Comment": "Step 5: single combined Pegasus Analyze call",
+      "Resource": "${RunComplianceAnalysisFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "ParseAndPersist"
+    },
+    "ParseAndPersist": {
+      "Type": "Task",
+      "Comment": "Step 6: defensively parse the Pegasus response, persist raw/normalized results",
+      "Resource": "${ParseAndPersistFunctionArn}",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "ApplySuggestionLogic"
+    },
+    "ApplySuggestionLogic": {
+      "Type": "Task",
+      "Comment": "Step 7: compute per-flag computed_verdict and the overall status from compliance_rules",
+      "Resource": "${ApplySuggestionLogicFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "PersistFinal"
+    },
+    "PersistFinal": {
+      "Type": "Task",
+      "Comment": "Step 8: update the ads row and insert the status_history entry (changed_by = system)",
+      "Resource": "${PersistFinalFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "PipelineSucceeded"
+    },
+    "PipelineSucceeded": { "Type": "Succeed" },
+
+    "HandlePipelineError": {
+      "Type": "Task",
+      "Comment": "Step 9: status = ERROR, error_message set, retry_count incremented - sits for manual Reprocess (NFR-5)",
+      "Resource": "${HandlePipelineErrorFunctionArn}",
+      "Next": "PipelineFailed"
+    },
+    "PipelineFailed": {
       "Type": "Fail",
-      "Error": "TriggerIngestFailed",
-      "Cause": "TriggerIngest failed before an ads row was created; see the TriggerIngest CloudWatch Logs for details."
+      "Error": "PipelineFailed",
+      "Cause": "See the ad's error_message / status_history for details."
     }
   }
 }

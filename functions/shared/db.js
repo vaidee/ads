@@ -36,9 +36,27 @@ async function getPool() {
   return pool;
 }
 
-async function query(text, params) {
-  const p = await getPool();
-  return p.query(text, params);
+// `client` is an optional PoolClient from withTransaction - lets repo functions
+// participate in a caller's transaction without knowing about it explicitly.
+async function query(text, params, client) {
+  const runner = client || (await getPool());
+  return runner.query(text, params);
 }
 
-module.exports = { getPool, query };
+async function withTransaction(fn) {
+  const p = await getPool();
+  const client = await p.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getPool, query, withTransaction };

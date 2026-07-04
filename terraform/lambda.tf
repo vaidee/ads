@@ -8,58 +8,87 @@ data "aws_iam_policy_document" "lambda_assume_role" {
   }
 }
 
-# --- TriggerIngest (SPEC.md 3.1 step 1) ---------------------------------
+# --- Pipeline Lambdas (SPEC.md 3.1 steps 1, 3-9) + weekly-eval (section 8.1) --
+# All of these need Postgres via VPC + the DB secret; "api" is handled
+# separately in api.tf (see locals.tf for why).
 
-resource "aws_iam_role" "trigger_ingest" {
-  name               = "${var.name_prefix}-trigger-ingest"
+resource "aws_iam_role" "function" {
+  for_each           = local.function_config
+  name               = "${var.name_prefix}-${each.key}"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
-resource "aws_iam_role_policy_attachment" "trigger_ingest_basic" {
-  role       = aws_iam_role.trigger_ingest.name
+resource "aws_iam_role_policy_attachment" "function_basic" {
+  for_each   = local.function_config
+  role       = aws_iam_role.function[each.key].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy_attachment" "trigger_ingest_vpc" {
-  role       = aws_iam_role.trigger_ingest.name
+resource "aws_iam_role_policy_attachment" "function_vpc" {
+  for_each   = local.function_config
+  role       = aws_iam_role.function[each.key].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-data "aws_iam_policy_document" "trigger_ingest_inline" {
+data "aws_iam_policy_document" "function_db_secret" {
   statement {
-    sid       = "ReadIngestBucketObjects"
-    actions   = ["s3:GetObject"]
-    resources = ["arn:aws:s3:::${var.ingest_bucket_name}/*"]
-  }
-
-  statement {
-    sid       = "ReadDbSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_rds_cluster.this.master_user_secret[0].secret_arn]
   }
 }
 
-resource "aws_iam_role_policy" "trigger_ingest_inline" {
-  name   = "${var.name_prefix}-trigger-ingest-inline"
-  role   = aws_iam_role.trigger_ingest.id
-  policy = data.aws_iam_policy_document.trigger_ingest_inline.json
+resource "aws_iam_role_policy" "function_db_secret" {
+  for_each = local.function_config
+  name     = "${var.name_prefix}-${each.key}-db-secret"
+  role     = aws_iam_role.function[each.key].id
+  policy   = data.aws_iam_policy_document.function_db_secret.json
 }
 
-resource "aws_cloudwatch_log_group" "trigger_ingest" {
-  name              = "/aws/lambda/${var.name_prefix}-trigger-ingest"
+data "aws_iam_policy_document" "function_tl_secret" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.tl_api_key.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "function_tl_secret" {
+  for_each = local.needs_tl_secret
+  name     = "${var.name_prefix}-${each.key}-tl-secret"
+  role     = aws_iam_role.function[each.key].id
+  policy   = data.aws_iam_policy_document.function_tl_secret.json
+}
+
+data "aws_iam_policy_document" "function_s3_read" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::${var.ingest_bucket_name}/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "function_s3_read" {
+  for_each = local.needs_s3_read
+  name     = "${var.name_prefix}-${each.key}-s3-read"
+  role     = aws_iam_role.function[each.key].id
+  policy   = data.aws_iam_policy_document.function_s3_read.json
+}
+
+resource "aws_cloudwatch_log_group" "function" {
+  for_each          = local.function_config
+  name              = "/aws/lambda/${var.name_prefix}-${each.key}"
   retention_in_days = var.log_retention_days
 }
 
-resource "aws_lambda_function" "trigger_ingest" {
-  function_name    = "${var.name_prefix}-trigger-ingest"
-  description      = "SPEC.md 3.1 step 1 - receive S3/reprocess event, presign S3 reference, look up filename in ads."
-  role             = aws_iam_role.trigger_ingest.arn
+resource "aws_lambda_function" "bundled" {
+  for_each = local.function_config
+
+  function_name    = "${var.name_prefix}-${each.key}"
+  role             = aws_iam_role.function[each.key].arn
   handler          = "index.handler"
   runtime          = "nodejs20.x"
-  timeout          = 30
-  memory_size      = 256
-  filename         = data.archive_file.trigger_ingest.output_path
-  source_code_hash = data.archive_file.trigger_ingest.output_base64sha256
+  timeout          = each.value.timeout
+  memory_size      = each.value.memory
+  filename         = data.archive_file.bundled[each.key].output_path
+  source_code_hash = data.archive_file.bundled[each.key].output_base64sha256
 
   vpc_config {
     subnet_ids         = var.vpc_subnet_ids
@@ -67,21 +96,29 @@ resource "aws_lambda_function" "trigger_ingest" {
   }
 
   environment {
-    variables = {
-      DB_SECRET_ARN     = aws_rds_cluster.this.master_user_secret[0].secret_arn
-      DB_PROXY_ENDPOINT = aws_db_proxy.this.endpoint
-      DB_NAME           = var.db_name
-    }
+    variables = merge(
+      {
+        DB_SECRET_ARN     = aws_rds_cluster.this.master_user_secret[0].secret_arn
+        DB_PROXY_ENDPOINT = aws_db_proxy.this.endpoint
+        DB_NAME           = var.db_name
+      },
+      contains(local.needs_tl_secret, each.key) ? {
+        TL_API_KEY_SECRET_ARN = aws_secretsmanager_secret.tl_api_key.arn
+        TL_API_BASE_URL       = var.tl_api_base_url
+        TL_INDEX_ID           = var.tl_index_id
+      } : {}
+    )
   }
 
   depends_on = [
-    aws_cloudwatch_log_group.trigger_ingest,
-    aws_iam_role_policy_attachment.trigger_ingest_basic,
-    aws_iam_role_policy_attachment.trigger_ingest_vpc,
+    aws_cloudwatch_log_group.function,
+    aws_iam_role_policy_attachment.function_basic,
+    aws_iam_role_policy_attachment.function_vpc,
   ]
 }
 
 # --- LogDuplicateSkip (SPEC.md 3.1 step 2, "Yes" branch) ----------------
+# No dependencies, no DB/S3 access needed - kept out of the generic for_each.
 
 resource "aws_iam_role" "log_duplicate_skip" {
   name               = "${var.name_prefix}-log-duplicate-skip"

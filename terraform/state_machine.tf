@@ -16,10 +16,10 @@ resource "aws_iam_role" "state_machine" {
 data "aws_iam_policy_document" "state_machine_invoke" {
   statement {
     actions = ["lambda:InvokeFunction"]
-    resources = [
-      aws_lambda_function.trigger_ingest.arn,
-      aws_lambda_function.log_duplicate_skip.arn,
-    ]
+    resources = concat(
+      [for k, v in aws_lambda_function.bundled : v.arn],
+      [aws_lambda_function.log_duplicate_skip.arn],
+    )
   }
 }
 
@@ -36,7 +36,14 @@ resource "aws_sfn_state_machine" "ingest_pipeline" {
   role_arn = aws_iam_role.state_machine.arn
 
   definition = templatefile("${path.module}/../statemachine/pipeline.asl.json", {
-    TriggerIngestFunctionArn    = aws_lambda_function.trigger_ingest.arn
-    LogDuplicateSkipFunctionArn = aws_lambda_function.log_duplicate_skip.arn
+    TriggerIngestFunctionArn         = aws_lambda_function.bundled["trigger-ingest"].arn
+    LogDuplicateSkipFunctionArn      = aws_lambda_function.log_duplicate_skip.arn
+    IndexVideoFunctionArn            = aws_lambda_function.bundled["index-video"].arn
+    CheckIndexingStatusFunctionArn   = aws_lambda_function.bundled["check-indexing-status"].arn
+    RunComplianceAnalysisFunctionArn = aws_lambda_function.bundled["run-compliance-analysis"].arn
+    ParseAndPersistFunctionArn       = aws_lambda_function.bundled["parse-and-persist"].arn
+    ApplySuggestionLogicFunctionArn  = aws_lambda_function.bundled["apply-suggestion-logic"].arn
+    PersistFinalFunctionArn          = aws_lambda_function.bundled["persist-final"].arn
+    HandlePipelineErrorFunctionArn   = aws_lambda_function.bundled["handle-pipeline-error"].arn
   })
 }

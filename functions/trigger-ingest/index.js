@@ -11,9 +11,14 @@ exports.handler = async (event) => {
   const ctx = normalizeIngestEvent(event);
 
   let source = ctx.source;
+  let durationSeconds = null;
   if (!source) {
+    // The upload-url Lambda (POST /ads/upload-url) tags the object with these at
+    // presign time; an automated S3 drop won't have them, hence the defaults.
     const head = await s3.headObject(ctx.s3Bucket, ctx.s3Key);
-    source = (head.Metadata && head.Metadata.source) || 'auto';
+    const metadata = head.Metadata || {};
+    source = metadata.source || 'auto';
+    durationSeconds = metadata['duration-seconds'] ? Number(metadata['duration-seconds']) : null;
   }
 
   // Reprocess reuses the known ad_id and must bypass the duplicate check entirely.
@@ -25,6 +30,7 @@ exports.handler = async (event) => {
     s3Bucket: ctx.s3Bucket,
     s3Key: ctx.s3Key,
     source,
+    durationSeconds,
     adId: ctx.existingAdId || (existingAd ? existingAd.id : null),
     isDuplicate: Boolean(existingAd),
     presignedUrl,
