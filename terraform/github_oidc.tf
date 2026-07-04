@@ -165,12 +165,30 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     # s3:ListBucket is what actually authorizes the HeadBucket call behind the
     # aws_s3_bucket data source (eventbridge.tf) - without it the AWS provider
     # surfaces a confusing "empty result" error rather than an access-denied one.
+    #
+    # NOTE: the IAM action is "PutBucketNotification" (no "Configuration"
+    # suffix) even though the actual S3 API operation it authorizes is called
+    # PutBucketNotificationConfiguration - one of AWS's action-name/API-name
+    # mismatches. Same for GetBucketNotification.
     sid = "S3BucketNotification"
     actions = [
-      "s3:GetBucketNotification", "s3:PutBucketNotificationConfiguration",
+      "s3:GetBucketNotification", "s3:PutBucketNotification",
       "s3:GetBucketLocation", "s3:ListBucket",
     ]
     resources = ["arn:aws:s3:::${var.ingest_bucket_name}"]
+  }
+  statement {
+    # RDS's storage_encrypted + manage_master_user_password both need to use
+    # the account's default AWS-managed KMS keys (aws/rds, aws/secretsmanager)
+    # - even for the default key, the calling principal still needs its own
+    # identity-based KMS permissions, not just the key's resource policy.
+    sid = "Kms"
+    actions = [
+      "kms:DescribeKey", "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant",
+      "kms:Decrypt", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext",
+      "kms:ListAliases", "kms:ListKeys",
+    ]
+    resources = ["*"]
   }
   statement {
     sid       = "Iam"
