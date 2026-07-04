@@ -130,6 +130,11 @@ resource "null_resource" "build_web" {
     ]))
     api_endpoint   = aws_apigatewayv2_stage.default.invoke_url
     cognito_client = aws_cognito_user_pool_client.web.id
+    # Bump this when build_web/deploy_web's own scripts change (not web/
+    # source) - null_resource only re-runs when its triggers change, and a
+    # script edit alone doesn't touch any of the values above, so a plain
+    # `terraform apply` would otherwise silently skip re-running it.
+    script_version = "2"
   }
 
   provisioner "local-exec" {
@@ -149,7 +154,13 @@ resource "null_resource" "deploy_web" {
   }
 
   provisioner "local-exec" {
+    # set -e: without it, a failure on any one line (e.g. the sync) doesn't
+    # stop the script - it keeps going and reports success based on the LAST
+    # command's exit code, which is exactly how a failed sync went unnoticed
+    # (the invalidation after it still "succeeded", so Terraform thought the
+    # whole provisioner did too, while the bucket stayed empty).
     command = <<-EOT
+      set -e
       aws s3 sync ${path.module}/../web/dist s3://${aws_s3_bucket.web.id} --delete \
         --cache-control "public,max-age=31536000,immutable" --exclude index.html
       aws s3 cp ${path.module}/../web/dist/index.html s3://${aws_s3_bucket.web.id}/index.html \
