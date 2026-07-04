@@ -19,9 +19,14 @@ variable "vpc_id" {
   description = "Existing VPC that Aurora, the RDS Proxy, and the TriggerIngest Lambda are deployed into."
 }
 
+variable "aurora_subnet_ids" {
+  type        = list(string)
+  description = "Subnets the Aurora cluster + RDS Proxy already live in. Deliberately left separate from db_subnet_ids/nat_subnet_ids below and never changed by the Tier A/B split: RDS refuses to drop a subnet from a DB subnet group while a running instance's ENI is still in it (that needs an instance recreation to fix), and Aurora/the Proxy never need a NAT/internet route anyway - intra-VPC traffic (Lambda -> Proxy -> Aurora) uses the VPC's automatic local route regardless of subnet tier, so there's no reason to migrate them."
+}
+
 variable "db_subnet_ids" {
   type        = list(string)
-  description = "Private subnets (in var.vpc_id) with NO route to the internet/NAT - only a route to the S3 Gateway Endpoint and (via the Secrets Manager Interface Endpoint's Private DNS) Secrets Manager. Used for the Aurora DB subnet group, the RDS Proxy, and every Lambda that doesn't call TwelveLabs (trigger-ingest, parse-and-persist, apply-suggestion-logic, persist-final, handle-pipeline-error, weekly-eval)."
+  description = "Private subnets (in var.vpc_id) with NO route to the internet/NAT - only a route to the S3 Gateway Endpoint and (via the Secrets Manager Interface Endpoint's Private DNS) Secrets Manager. Used for every Lambda that doesn't call TwelveLabs (trigger-ingest, parse-and-persist, apply-suggestion-logic, persist-final, handle-pipeline-error, weekly-eval)."
 }
 
 variable "nat_subnet_ids" {
