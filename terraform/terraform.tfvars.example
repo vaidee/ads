@@ -7,9 +7,15 @@
 # variable and its default.
 
 # --- Existing AWS networking (this stack does not create a VPC) ------------
-vpc_id                  = "vpc-xxxxxxxxxxxxxxxxx"
-vpc_subnet_ids          = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
-vpc_security_group_ids  = ["sg-xxxxxxxxxxxxxxxxx"]
+# db_subnet_ids: Tier A - no NAT/internet route, only S3 Gateway Endpoint +
+#   Secrets Manager Interface Endpoint. Used by Aurora/RDS Proxy and every
+#   Lambda except the TwelveLabs callers below.
+# nat_subnet_ids: Tier B - routes 0.0.0.0/0 through a NAT Gateway. Used only
+#   by index-video, check-indexing-status, run-compliance-analysis, and api.
+vpc_id                 = "vpc-xxxxxxxxxxxxxxxxx"
+db_subnet_ids          = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
+nat_subnet_ids         = ["subnet-aaaaaaaaaaaaaaaaa", "subnet-bbbbbbbbbbbbbbbbb"]
+vpc_security_group_ids = ["sg-xxxxxxxxxxxxxxxxx"]
 
 # --- Existing S3 bucket watched for ad uploads ------------------------------
 ingest_bucket_name = "your-ads-ingest-bucket"

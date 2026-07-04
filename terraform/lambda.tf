@@ -91,7 +91,7 @@ resource "aws_lambda_function" "bundled" {
   source_code_hash = data.archive_file.bundled[each.key].output_base64sha256
 
   vpc_config {
-    subnet_ids         = var.vpc_subnet_ids
+    subnet_ids         = contains(local.nat_functions, each.key) ? var.nat_subnet_ids : var.db_subnet_ids
     security_group_ids = var.vpc_security_group_ids
   }
 
