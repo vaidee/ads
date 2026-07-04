@@ -156,9 +156,15 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     resources = ["*"]
   }
   statement {
-    sid       = "S3BucketNotification"
-    actions   = ["s3:GetBucketNotification", "s3:PutBucketNotificationConfiguration", "s3:GetBucketLocation"]
-    resources = ["*"]
+    # s3:ListBucket is what actually authorizes the HeadBucket call behind the
+    # aws_s3_bucket data source (eventbridge.tf) - without it the AWS provider
+    # surfaces a confusing "empty result" error rather than an access-denied one.
+    sid = "S3BucketNotification"
+    actions = [
+      "s3:GetBucketNotification", "s3:PutBucketNotificationConfiguration",
+      "s3:GetBucketLocation", "s3:ListBucket",
+    ]
+    resources = ["arn:aws:s3:::${var.ingest_bucket_name}"]
   }
   statement {
     sid       = "Iam"
