@@ -49,7 +49,7 @@ async function request(method, path, body, { isFormData = false } = {}) {
 async function createIndexingTask(indexId, videoUrl) {
   const form = new FormData();
   form.append('index_id', indexId);
-  form.append('url', videoUrl);
+  form.append('video_url', videoUrl);
   const result = await request('POST', '/tasks', form, { isFormData: true });
   return { taskId: result._id || result.id };
 }
