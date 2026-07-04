@@ -1,0 +1,96 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+  push:
+    branches: [main]
+    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # required to request the GitHub OIDC token
+  contents: read
+  pull-requests: write # so `plan` can comment on the PR
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  plan:
+    name: terraform plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: npm install (esbuild is invoked by terraform apply/plan via local-exec)
+        run: npm install --no-audit --no-fund
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      # NOTE: no backend is configured yet (see terraform/versions.tf) - this
+      # step uses local state, which does NOT persist between CI runs. Wire up
+      # an S3/DynamoDB backend before relying on this for anything beyond
+      # fmt/validate - see the README note in terraform/ (or ask for it to be
+      # added) before turning on the `apply` job below for real.
+      - name: terraform init
+        run: terraform init
+        working-directory: terraform
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: terraform
+
+      # VPC_SUBNET_IDS / VPC_SECURITY_GROUP_IDS repo variables must be set as
+      # HCL/JSON list literals, e.g. ["subnet-abc123","subnet-def456"], since
+      # TF_VAR_* for a list(string) variable is parsed as HCL, not CSV.
+      - name: terraform plan
+        run: terraform plan -input=false
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
+
+  apply:
+    name: terraform apply
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: aws-deploy # requires a manual reviewer approval - configure under repo Settings > Environments
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: npm install --no-audit --no-fund
+
+      - run: terraform init
+        working-directory: terraform
+
+      - run: terraform apply -input=false -auto-approve
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_vpc_subnet_ids: ${{ vars.VPC_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}

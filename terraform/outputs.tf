@@ -41,3 +41,8 @@ output "tl_api_key_secret_arn" {
   description = "Update this secret's value in Secrets Manager (or re-apply with a new tl_api_key) if the TwelveLabs key rotates."
   value       = aws_secretsmanager_secret.tl_api_key.arn
 }
+
+output "github_actions_deploy_role_arn" {
+  description = "Put this in the repo's AWS_DEPLOY_ROLE_ARN variable (Settings > Secrets and variables > Actions) for .github/workflows/terraform.yml to assume."
+  value       = aws_iam_role.github_actions_deploy.arn
+}
