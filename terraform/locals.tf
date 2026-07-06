@@ -5,8 +5,13 @@ locals {
   # the state machine ARN, which would create a dependency cycle if it were
   # unified into the same for_each as the state machine's own Task resources.
   function_config = {
-    "trigger-ingest"          = { timeout = 30, memory = 256 }
-    "index-video"             = { timeout = 30, memory = 256 }
+    "trigger-ingest" = { timeout = 30, memory = 256 }
+    # TwelveLabs' POST /tasks fetches and validates the video from the
+    # presigned URL synchronously before responding - this can take
+    # noticeably longer than the trivial parameter-validation failures seen
+    # while debugging (all of which returned in well under 30s), so this
+    # needs more headroom than the other DB-only-call Lambdas.
+    "index-video"             = { timeout = 60, memory = 256 }
     "check-indexing-status"   = { timeout = 30, memory = 256 }
     "run-compliance-analysis" = { timeout = 60, memory = 512 }
     "parse-and-persist"       = { timeout = 30, memory = 256 }
