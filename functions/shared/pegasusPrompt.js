@@ -51,6 +51,15 @@ Also provide your own overall suitability verdict as one of: "Suitable", "Needs 
 This is your independent assessment only - it is advisory and will be shown alongside a separate
 rules-based verdict for comparison. It does not determine the final published status.
 
+Additionally, describe the video's content in full - this metadata will be used for search and
+display, not compliance. Return:
+- summary: 2-3 sentence description of what happens in the video
+- detected_objects: array of notable physical objects visible (e.g. product bottle, applicator, mirror, wine glass)
+- setting: brief description of the location/scene (e.g. "bathroom vanity", "outdoor studio")
+- on_screen_text: array of any text/captions that appear on screen, verbatim
+- mood_tone: 1-3 words describing the overall tone (e.g. "energetic, upbeat", "calm, luxury")
+- key_moments: array of {timestamp, description} for notable moments (product reveal, before/after, application steps) - this replaces separately-run chapters/highlights, generated in the same pass
+
 Return exactly this JSON structure:
 
 {
@@ -63,10 +72,22 @@ Return exactly this JSON structure:
       "description": "Wine glass visible in background during product demo",
       "confidence": 0.65
     }
-  ]
+  ],
+  "content_metadata": {
+    "summary": "A creator demonstrates a nighttime skincare routine at a bathroom vanity, applying serum and moisturizer while narrating each step.",
+    "detected_objects": ["serum bottle", "moisturizer jar", "mirror", "wine glass"],
+    "setting": "bathroom vanity",
+    "on_screen_text": ["STEP 1: CLEANSE", "STEP 2: SERUM"],
+    "mood_tone": "calm, routine",
+    "key_moments": [
+      {"timestamp": "00:05", "description": "Product reveal, bottle shown to camera"},
+      {"timestamp": "00:42", "description": "Wine glass visible in background"}
+    ]
+  }
 }
 
-If no issues are found, return an empty array for compliance_flags. Do not omit any field.
+If no compliance issues are found, return an empty array for compliance_flags. Do not omit any field,
+including content_metadata - it is required on every response, not just flagged videos.
 `;
 
 module.exports = { PEGASUS_PROMPT };

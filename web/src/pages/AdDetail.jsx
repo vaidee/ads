@@ -102,6 +102,28 @@ export default function AdDetail() {
           </button>
         </div>
 
+        {ad.content_metadata && (
+          <div className="panel" style={{ marginTop: '1rem' }}>
+            <h4>Content overview</h4>
+            <p>{ad.content_metadata.summary}</p>
+            <p className="muted">
+              Setting: {ad.content_metadata.setting || 'unknown'} - Mood/tone: {ad.content_metadata.mood_tone || 'unknown'}
+            </p>
+            {ad.content_metadata.key_moments && ad.content_metadata.key_moments.length > 0 && (
+              <div>
+                {ad.content_metadata.key_moments.map((moment, i) => (
+                  <p key={i} className="muted">
+                    <span className="timestamp" onClick={() => seekTo(timestampToSeconds(moment.timestamp))}>
+                      {moment.timestamp}
+                    </span>{' '}
+                    {moment.description}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="panel" style={{ marginTop: '1rem' }}>
           <h4>Status history</h4>
           {statusHistory.map((h) => (
@@ -209,6 +231,13 @@ export default function AdDetail() {
       </div>
     </div>
   );
+}
+
+// content_metadata.key_moments timestamps are "mm:ss" strings (same format
+// the AI prompt uses for compliance_flags) - convert for video.currentTime.
+function timestampToSeconds(timestamp) {
+  const [minutes, seconds] = (timestamp || '0:00').split(':').map(Number);
+  return minutes * 60 + seconds;
 }
 
 function markerColor(verdict) {

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
-// One-time bootstrap: applies schema.sql to an Aurora Postgres database.
+// One-time bootstrap: applies a schema file to an Aurora Postgres database.
 // Run against the cluster's writer endpoint (not the RDS Proxy) since it needs
-// DDL privileges and only needs to run once per environment.
+// DDL privileges and only needs to run once per environment/migration.
 //
 // Usage: DB_HOST=... DB_NAME=... DB_USER=... DB_PASSWORD=... node db/migrate.js
+// Usage (v2 additions, once v1's schema.sql is already applied):
+//   SCHEMA_FILE=schema_v2.sql DB_HOST=... DB_NAME=... DB_USER=... DB_PASSWORD=... node db/migrate.js
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,13 +20,13 @@ const rdsCaCert = require('../functions/shared/rdsCaCert');
 const trustedCas = [...tls.rootCertificates, rdsCaCert];
 
 async function main() {
-  const { DB_HOST, DB_PORT = '5432', DB_NAME, DB_USER, DB_PASSWORD } = process.env;
+  const { DB_HOST, DB_PORT = '5432', DB_NAME, DB_USER, DB_PASSWORD, SCHEMA_FILE = 'schema.sql' } = process.env;
 
   if (!DB_HOST || !DB_NAME || !DB_USER || !DB_PASSWORD) {
     throw new Error('DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD environment variables are required');
   }
 
-  const schemaSql = fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8');
+  const schemaSql = fs.readFileSync(path.join(__dirname, '..', SCHEMA_FILE), 'utf8');
 
   const client = new Client({
     host: DB_HOST,
@@ -38,7 +40,7 @@ async function main() {
   await client.connect();
   try {
     await client.query(schemaSql);
-    console.log('schema.sql applied successfully.');
+    console.log(`${SCHEMA_FILE} applied successfully.`);
   } finally {
     await client.end();
   }

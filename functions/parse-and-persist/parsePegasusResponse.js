@@ -20,6 +20,28 @@ function timestampToSeconds(timestamp) {
   return Number(minutes) * 60 + Number(seconds);
 }
 
+// v2 (SPEC_v2.md V2-3): content_metadata is required on every response, same
+// as every other top-level field - but only lightweight type checks on its
+// sub-fields, not deep semantic validation, since this is display/search
+// metadata rather than a compliance decision. Being too strict here would
+// fail the whole ad over an LLM formatting quirk in a field nothing
+// safety-critical depends on.
+function validateContentMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    throw new Error('content_metadata is required and must be an object');
+  }
+  for (const field of ['summary', 'setting', 'mood_tone']) {
+    if (typeof metadata[field] !== 'string') {
+      throw new Error(`content_metadata.${field} must be a string`);
+    }
+  }
+  for (const field of ['detected_objects', 'on_screen_text', 'key_moments']) {
+    if (!Array.isArray(metadata[field])) {
+      throw new Error(`content_metadata.${field} must be an array`);
+    }
+  }
+}
+
 // Validates against the schema in SPEC.md section 4 and throws on any
 // deviation, rather than assuming clean output - the caller's Catch turns that
 // into an ERROR status (SPEC.md 3.1 step 9) instead of persisting garbage.
@@ -44,6 +66,7 @@ function parsePegasusResponse(rawText) {
   if (!Array.isArray(parsed.compliance_flags)) {
     throw new Error('compliance_flags is not an array');
   }
+  validateContentMetadata(parsed.content_metadata);
 
   const complianceFlags = parsed.compliance_flags.map((flag, i) => {
     if (!CATEGORY_LABELS[flag.category]) {
@@ -70,8 +93,9 @@ function parsePegasusResponse(rawText) {
     productCategory: parsed.product_category,
     aiSuitabilityVerdict: parsed.ai_suitability_verdict,
     complianceFlags,
+    contentMetadata: parsed.content_metadata,
     rawParsed: parsed,
   };
 }
 
-module.exports = { parsePegasusResponse, stripMarkdownFences, timestampToSeconds };
+module.exports = { parsePegasusResponse, stripMarkdownFences, timestampToSeconds, validateContentMetadata };
