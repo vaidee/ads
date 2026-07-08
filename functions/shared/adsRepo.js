@@ -62,6 +62,19 @@ async function searchByFilename(q, limit = 50) {
   return result.rows;
 }
 
+// SPEC_v2 V2-3, search tier 2 (free full-text, between the structured filename
+// match above and the paid TwelveLabs semantic fallback). websearch_to_tsquery
+// (not plainto_tsquery) so quoted phrases/OR/- exclusions in the user's query
+// behave the way a search-box user expects them to.
+async function searchByContent(q, limit = 50) {
+  const result = await db.query(
+    `SELECT * FROM ads WHERE content_search_vector @@ websearch_to_tsquery('english', $1)
+     ORDER BY updated_at DESC LIMIT $2`,
+    [q, limit]
+  );
+  return result.rows;
+}
+
 // GET /ads: filters + offset pagination (SPEC.md section 6).
 async function list({ status, productCategory, dateFrom, dateTo, sort, page = 1, limit = 25 } = {}) {
   const { where, params } = buildFilterClause({ status, productCategory, dateFrom, dateTo });
@@ -136,13 +149,15 @@ async function setTlTaskStatus(id, tlTaskStatus) {
   return result.rows[0] || null;
 }
 
-// SPEC.md 3.1 step 6 (ParseAndPersist).
-async function persistAnalysis({ id, productCategory, aiSuitabilityVerdict, rawAiResponse }) {
+// SPEC.md 3.1 step 6 (ParseAndPersist). content_metadata (SPEC_v2 V2-3) drives
+// the generated content_search_vector column automatically - no separate write needed for that.
+async function persistAnalysis({ id, productCategory, aiSuitabilityVerdict, rawAiResponse, contentMetadata }) {
   const result = await db.query(
-    `UPDATE ads SET product_category = $1, ai_suitability_verdict = $2, raw_ai_response = $3, updated_at = now()
-     WHERE id = $4
+    `UPDATE ads SET product_category = $1, ai_suitability_verdict = $2, raw_ai_response = $3,
+       content_metadata = $4, updated_at = now()
+     WHERE id = $5
      RETURNING *`,
-    [productCategory, aiSuitabilityVerdict, JSON.stringify(rawAiResponse), id]
+    [productCategory, aiSuitabilityVerdict, JSON.stringify(rawAiResponse), JSON.stringify(contentMetadata), id]
   );
   return result.rows[0] || null;
 }
@@ -262,6 +277,7 @@ module.exports = {
   findById,
   findByTlVideoIds,
   searchByFilename,
+  searchByContent,
   list,
   listForExport,
   insertForIndexing,
