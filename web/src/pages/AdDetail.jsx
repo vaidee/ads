@@ -30,7 +30,7 @@ export default function AdDetail() {
   if (error) return <div className="error-banner">{error}</div>;
   if (!data) return <p className="muted">Loading...</p>;
 
-  const { ad, playbackUrl, flags, comments, statusHistory, publishRecords } = data;
+  const { ad, playbackUrl, flags, comments, statusHistory, publishRecords, talentDetections } = data;
 
   function seekTo(seconds) {
     if (videoRef.current) videoRef.current.currentTime = seconds;
@@ -239,6 +239,28 @@ export default function AdDetail() {
           ))}
         </div>
 
+        {talentDetections.length > 0 && (
+          <div className="panel" style={{ marginTop: '1rem' }}>
+            <h4>Talent compliance</h4>
+            <p className="muted">Contractual/legal risk - separate from the content-safety findings above.</p>
+            {talentDetections.map((d) => (
+              <div key={d.id} className="finding">
+                <div className="finding-header">
+                  <span className="timestamp" onClick={() => seekTo(d.timestamp_seconds)}>
+                    {formatSeconds(d.timestamp_seconds)}
+                  </span>
+                  <strong>{d.talent_name}</strong>
+                  <span className="muted">confidence {Number(d.confidence).toFixed(2)}</span>
+                </div>
+                <p style={{ color: d.flagged ? '#d33c3c' : undefined }}>
+                  {d.flagged ? 'FLAGGED - ' : ''}
+                  Contract status at detection: {d.contract_status_at_detection.replace('_', ' ')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="panel" style={{ marginTop: '1rem' }}>
           <h4>General comments</h4>
           {comments
@@ -267,6 +289,14 @@ export default function AdDetail() {
 function timestampToSeconds(timestamp) {
   const [minutes, seconds] = (timestamp || '0:00').split(':').map(Number);
   return minutes * 60 + seconds;
+}
+
+// talent_detections only stores timestamp_seconds (an integer), unlike
+// compliance_flags which also has a pre-formatted timestamp_display string.
+function formatSeconds(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function markerColor(verdict) {

@@ -1,5 +1,5 @@
 {
-  "Comment": "Ad compliance pipeline (SPEC.md section 3.1) - all 9 steps.",
+  "Comment": "Ad compliance pipeline (SPEC.md section 3.1, all 9 steps) + DetectTalent (SPEC_v2 V2-1).",
   "StartAt": "TriggerIngest",
   "States": {
     "TriggerIngest": {
@@ -113,6 +113,16 @@
         { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
       ],
       "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "DetectTalent"
+    },
+    "DetectTalent": {
+      "Type": "Task",
+      "Comment": "SPEC_v2 V2-1: closed-set talent/contract compliance via TwelveLabs Entity Search - advisory only (contractual/legal risk, not a content-safety verdict), so a failure here must never fail the core pipeline, unlike every other step",
+      "Resource": "${DetectTalentFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.talentDetectionError", "Next": "PipelineSucceeded" }],
       "Next": "PipelineSucceeded"
     },
     "PipelineSucceeded": { "Type": "Succeed" },
