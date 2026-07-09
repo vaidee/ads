@@ -43,7 +43,7 @@ jobs:
           set -e
           for fn in trigger-ingest index-video check-indexing-status run-compliance-analysis \
                     parse-and-persist apply-suggestion-logic persist-final handle-pipeline-error \
-                    weekly-eval api; do
+                    weekly-eval run-platform-compliance api; do
             npx esbuild "functions/$fn/index.js" --bundle --platform=node --target=node20 \
               --external:@aws-sdk/* --outfile="terraform/dist/$fn/index.js"
           done
@@ -112,7 +112,7 @@ jobs:
           set -e
           for fn in trigger-ingest index-video check-indexing-status run-compliance-analysis \
                     parse-and-persist apply-suggestion-logic persist-final handle-pipeline-error \
-                    weekly-eval api; do
+                    weekly-eval run-platform-compliance api; do
             npx esbuild "functions/$fn/index.js" --bundle --platform=node --target=node20 \
               --external:@aws-sdk/* --outfile="terraform/dist/$fn/index.js"
           done

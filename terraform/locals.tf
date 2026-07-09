@@ -19,6 +19,10 @@ locals {
     "persist-final"           = { timeout = 30, memory = 256 }
     "handle-pipeline-error"   = { timeout = 30, memory = 256 }
     "weekly-eval"             = { timeout = 60, memory = 256 }
+    # SPEC_v2 V2-2: invoked asynchronously by POST /ads/{id}/publish, not part
+    # of the state machine - same 60s timeout as run-compliance-analysis for
+    # the same reason (a single, potentially-slow synchronous Analyze call).
+    "run-platform-compliance" = { timeout = 60, memory = 256 }
   }
 
   # Bundled with esbuild (they all pull in `pg` and functions/shared/* via
@@ -26,13 +30,15 @@ locals {
   # as-is, and api is bundled separately in api.tf.
   bundled_functions = keys(local.function_config)
 
-  needs_tl_secret = toset(["index-video", "check-indexing-status", "run-compliance-analysis"])
-  needs_s3_read   = toset(["trigger-ingest"])
+  needs_tl_secret = toset(["index-video", "check-indexing-status", "run-compliance-analysis", "run-platform-compliance"])
+  # run-platform-compliance needs GetObject too - a presigned URL only works
+  # if the signing role actually has permission on the object it points at.
+  needs_s3_read = toset(["trigger-ingest", "run-platform-compliance"])
 
   # Only these call TwelveLabs over the public internet, so only these need a
   # NAT-routed subnet (Tier B). Everything else - including trigger-ingest,
   # which only calls S3 (via the Gateway Endpoint) and Secrets Manager (via
   # the Interface Endpoint, reachable VPC-wide since it has Private DNS
   # enabled) - stays in the DB-only subnets (Tier A) with no internet route.
-  nat_functions = toset(["index-video", "check-indexing-status", "run-compliance-analysis"])
+  nat_functions = toset(["index-video", "check-indexing-status", "run-compliance-analysis", "run-platform-compliance"])
 }

@@ -55,6 +55,13 @@ data "aws_iam_policy_document" "api_inline" {
     actions   = ["states:StartExecution"]
     resources = [aws_sfn_state_machine.ingest_pipeline.arn]
   }
+  statement {
+    # SPEC_v2 V2-2: POST /ads/{id}/publish asynchronously invokes this instead
+    # of waiting on it inline - see functions/shared/lambdaInvoker.js.
+    sid       = "InvokePlatformCompliance"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.bundled["run-platform-compliance"].arn]
+  }
 }
 
 resource "aws_iam_role_policy" "api_inline" {
@@ -95,6 +102,8 @@ resource "aws_lambda_function" "api" {
       TL_INDEX_ID           = var.tl_index_id
       STATE_MACHINE_ARN     = aws_sfn_state_machine.ingest_pipeline.arn
       INGEST_BUCKET_NAME    = var.ingest_bucket_name
+      # SPEC_v2 V2-2: POST /ads/{id}/publish invokes this asynchronously.
+      RUN_PLATFORM_COMPLIANCE_FUNCTION_NAME = aws_lambda_function.bundled["run-platform-compliance"].function_name
     }
   }
 
