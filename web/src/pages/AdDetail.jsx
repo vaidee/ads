@@ -171,6 +171,11 @@ export default function AdDetail() {
                 <p className="muted">
                   Last marked: {publishRecords[0].platform} by {publishRecords[0].marked_by} on{' '}
                   {new Date(publishRecords[0].marked_at).toLocaleString()}
+                  <br />
+                  Platform compliance: {publishRecords[0].platform_verdict || 'pending...'}
+                  {publishRecords[0].platform_flags && publishRecords[0].platform_flags.length > 0 && (
+                    <span> ({publishRecords[0].platform_flags.length} flag(s))</span>
+                  )}
                 </p>
               )}
             </div>

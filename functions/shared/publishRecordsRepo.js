@@ -18,4 +18,14 @@ async function insert({ adId, platform, markedBy, notes }) {
   return result.rows[0];
 }
 
-module.exports = { listByAdId, insert };
+// SPEC_v2 V2-2: filled in later by run-platform-compliance, once its
+// asynchronously-invoked supplementary Analyze call finishes.
+async function updatePlatformResult({ id, platformVerdict, platformFlags }) {
+  const result = await db.query(
+    `UPDATE publish_records SET platform_verdict = $1, platform_flags = $2 WHERE id = $3 RETURNING *`,
+    [platformVerdict, JSON.stringify(platformFlags), id]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = { listByAdId, insert, updatePlatformResult };
