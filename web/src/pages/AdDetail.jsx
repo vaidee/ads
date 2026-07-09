@@ -167,17 +167,41 @@ export default function AdDetail() {
                   </button>
                 ))}
               </div>
-              {publishRecords.length > 0 && (
-                <p className="muted">
-                  Last marked: {publishRecords[0].platform} by {publishRecords[0].marked_by} on{' '}
-                  {new Date(publishRecords[0].marked_at).toLocaleString()}
-                  <br />
-                  Platform compliance: {publishRecords[0].platform_verdict || 'pending...'}
-                  {publishRecords[0].platform_flags && publishRecords[0].platform_flags.length > 0 && (
-                    <span> ({publishRecords[0].platform_flags.length} flag(s))</span>
-                  )}
-                </p>
-              )}
+              {/* One entry per platform, not just the single most-recently-marked
+                  record overall - each platform is a separate publish_records row
+                  (a fresh INSERT per publish action, never overwritten), but
+                  publishRecords is sorted marked_at DESC across ALL platforms, so
+                  find() here picks out each platform's latest row. */}
+              {PLATFORMS.map((p) => {
+                const record = publishRecords.find((r) => r.platform === p);
+                if (!record) return null;
+                return (
+                  <div key={p} style={{ marginTop: '0.75rem' }}>
+                    <p className="muted">
+                      Last marked: {record.platform} by {record.marked_by} on{' '}
+                      {new Date(record.marked_at).toLocaleString()}
+                      <br />
+                      Platform compliance: {record.platform_verdict || 'pending...'}
+                    </p>
+                    {record.platform_flags && record.platform_flags.length > 0 && (
+                      <div>
+                        {record.platform_flags.map((flag, i) => (
+                          <div key={i} className="finding">
+                            <div className="finding-header">
+                              <span className="timestamp" onClick={() => seekTo(timestampToSeconds(flag.timestamp))}>
+                                {flag.timestamp}
+                              </span>
+                              <span className="category-badge">{flag.category}</span>
+                              <span className="muted">confidence {Number(flag.confidence).toFixed(2)}</span>
+                            </div>
+                            <p>{flag.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
