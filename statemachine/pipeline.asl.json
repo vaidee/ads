@@ -34,7 +34,15 @@
         { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
       ],
       "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
-      "Next": "WaitBeforeIndexingCheck"
+      "Next": "AlreadyIndexedChoice"
+    },
+    "AlreadyIndexedChoice": {
+      "Type": "Choice",
+      "Comment": "Skip the indexing poll loop when IndexVideo found the video was already indexed in a prior run",
+      "Choices": [
+        { "Variable": "$.tlTaskStatus", "StringEquals": "ready", "Next": "RunComplianceAnalysis" }
+      ],
+      "Default": "WaitBeforeIndexingCheck"
     },
 
     "WaitBeforeIndexingCheck": {

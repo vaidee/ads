@@ -179,6 +179,8 @@ tr.clickable:hover {
 
 .video-wrap video {
   width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
   border-radius: var(--radius);
   background: black;
   display: block;
