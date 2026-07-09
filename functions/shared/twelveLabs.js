@@ -113,4 +113,27 @@ async function semanticSearch(indexId, query) {
   return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score }));
 }
 
-module.exports = { createIndexingTask, getTaskStatus, analyzeVideo, semanticSearch };
+// SPEC_v2 V2-1: closed-set talent matching via Entity Search (Marengo 3.0,
+// beta - unverified against a live account, expect this to need at least one
+// live-iteration round same as /tasks and /analyze did). Reuses the same
+// /search endpoint semanticSearch does - Entity Search isn't a separate
+// endpoint, it's the standard search API with the target entity's id embedded
+// in query_text using TwelveLabs' <@entity_id> marker syntax. The index must
+// have Marengo 3.0 enabled for this to work.
+async function searchEntity(indexId, entityId) {
+  const result = await request('POST', '/search', {
+    index_id: indexId,
+    query_text: `<@${entityId}> appears`,
+    search_options: ['visual'],
+  });
+  return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score, start: hit.start }));
+}
+
+// Read-only lookup used by db/import-talent-reference.js to fetch/confirm an
+// entity the user already created directly in the TwelveLabs Playground
+// (rather than this app creating entities/uploading reference images itself).
+async function getEntity(entityCollectionId, entityId) {
+  return request('GET', `/entity-collections/${entityCollectionId}/entities/${entityId}`);
+}
+
+module.exports = { createIndexingTask, getTaskStatus, analyzeVideo, semanticSearch, searchEntity, getEntity };

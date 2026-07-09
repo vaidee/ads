@@ -45,5 +45,6 @@ resource "aws_sfn_state_machine" "ingest_pipeline" {
     ApplySuggestionLogicFunctionArn  = aws_lambda_function.bundled["apply-suggestion-logic"].arn
     PersistFinalFunctionArn          = aws_lambda_function.bundled["persist-final"].arn
     HandlePipelineErrorFunctionArn   = aws_lambda_function.bundled["handle-pipeline-error"].arn
+    DetectTalentFunctionArn          = aws_lambda_function.bundled["detect-talent"].arn
   })
 }
