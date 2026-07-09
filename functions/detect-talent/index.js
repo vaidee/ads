@@ -63,6 +63,12 @@ exports.handler = async (event) => {
         JSON.stringify({
           event: 'detect_talent_search_result',
           adId: event.adId,
+          // Entity Search is index-wide (every video in the index containing
+          // this entity, not just this ad's) - adTlVideoId is what
+          // hits[].videoId actually needs to equal for a match; logged
+          // alongside the hits so that comparison doesn't require a separate
+          // DB lookup.
+          adTlVideoId: ad.tl_video_id,
           talentReferenceId: talentRef.id,
           tlEntityId: talentRef.tl_entity_id,
           hitCount: hits.length,
