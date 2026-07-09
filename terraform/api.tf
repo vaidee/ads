@@ -56,8 +56,8 @@ data "aws_iam_policy_document" "api_inline" {
     resources = [aws_sfn_state_machine.ingest_pipeline.arn]
   }
   statement {
-    # SPEC_v2 V2-2: POST /ads/{id}/publish asynchronously invokes this instead
-    # of waiting on it inline - see functions/shared/lambdaInvoker.js.
+    # v3 status redesign: POST /ads/{id}/approve asynchronously invokes this
+    # instead of waiting on it inline - see functions/shared/lambdaInvoker.js.
     sid       = "InvokePlatformCompliance"
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.bundled["run-platform-compliance"].arn]

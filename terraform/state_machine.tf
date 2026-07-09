@@ -46,5 +46,6 @@ resource "aws_sfn_state_machine" "ingest_pipeline" {
     PersistFinalFunctionArn          = aws_lambda_function.bundled["persist-final"].arn
     HandlePipelineErrorFunctionArn   = aws_lambda_function.bundled["handle-pipeline-error"].arn
     DetectTalentFunctionArn          = aws_lambda_function.bundled["detect-talent"].arn
+    RunPlatformComplianceFunctionArn = aws_lambda_function.bundled["run-platform-compliance"].arn
   })
 }

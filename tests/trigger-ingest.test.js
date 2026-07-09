@@ -10,7 +10,7 @@ const { handler } = require('../functions/trigger-ingest/index');
 test('flags a filename that already exists in ads as a duplicate', async () => {
   s3.headObject = async () => ({ Metadata: { source: 'auto' } });
   s3.getPresignedGetUrl = async () => 'https://example.com/presigned';
-  adsRepo.findByFilename = async () => ({ id: 'existing-ad-id', status: 'PUBLISHED' });
+  adsRepo.findByFilename = async () => ({ id: 'existing-ad-id', status: 'APPROVED' });
 
   const result = await handler({
     source: 'aws.s3',

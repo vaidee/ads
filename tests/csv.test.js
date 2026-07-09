@@ -27,10 +27,10 @@ test('toCsv builds a header row plus one row per record', () => {
     { key: 'status', label: 'status' },
   ];
   const rows = [
-    { filename: 'a.mp4', status: 'PUBLISHED' },
+    { filename: 'a.mp4', status: 'APPROVED' },
     { filename: 'b, weird.mp4', status: 'NEEDS_REVIEW' },
   ];
 
   const csv = toCsv(columns, rows);
-  assert.equal(csv, 'filename,status\na.mp4,PUBLISHED\n"b, weird.mp4",NEEDS_REVIEW');
+  assert.equal(csv, 'filename,status\na.mp4,APPROVED\n"b, weird.mp4",NEEDS_REVIEW');
 });

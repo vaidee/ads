@@ -19,10 +19,13 @@ locals {
     "persist-final"           = { timeout = 30, memory = 256 }
     "handle-pipeline-error"   = { timeout = 30, memory = 256 }
     "weekly-eval"             = { timeout = 60, memory = 256 }
-    # SPEC_v2 V2-2: invoked asynchronously by POST /ads/{id}/publish, not part
-    # of the state machine - same 60s timeout as run-compliance-analysis for
-    # the same reason (a single, potentially-slow synchronous Analyze call).
-    "run-platform-compliance" = { timeout = 60, memory = 256 }
+    # v3 status redesign: now a genuine pipeline Task (see pipeline.asl.json's
+    # PlatformComplianceChoice/RunPlatformCompliance), also re-invoked
+    # asynchronously by the Approve CTA (transitionStatus.js) - runs all 4
+    # platforms in parallel per invocation now, instead of one at a time from
+    # a per-platform button click, so needs more headroom than a single
+    # Analyze call.
+    "run-platform-compliance" = { timeout = 120, memory = 256 }
     # SPEC_v2 V2-1: tail-end pipeline step (see pipeline.asl.json's
     # DetectTalent state) - one TwelveLabs Entity Search call per active
     # talent reference for the ad's client, so give it a little more headroom
