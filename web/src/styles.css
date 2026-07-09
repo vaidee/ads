@@ -151,7 +151,7 @@ tr.clickable:hover {
 }
 
 .badge-PROCESSING { background: #8a8a94; }
-.badge-PUBLISHED { background: #1f9d55; }
+.badge-APPROVED { background: #1f9d55; }
 .badge-NEEDS_REVIEW { background: #d98c00; }
 .badge-REJECTED { background: #d33c3c; }
 .badge-SENT_BACK { background: #6a4fd6; }

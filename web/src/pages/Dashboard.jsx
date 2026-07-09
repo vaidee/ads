@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 
-const STATUSES = ['PROCESSING', 'PUBLISHED', 'NEEDS_REVIEW', 'REJECTED', 'SENT_BACK', 'ERROR'];
+const STATUSES = ['PROCESSING', 'APPROVED', 'NEEDS_REVIEW', 'REJECTED', 'SENT_BACK', 'ERROR'];
 const PRODUCT_CATEGORIES = ['skincare', 'makeup', 'haircare', 'fragrance', 'tools_devices', 'other'];
 
 export default function Dashboard() {

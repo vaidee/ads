@@ -32,23 +32,24 @@ test('computeContractStatus: no contract_end at all is within_contract', () => {
 
 // SPEC_v2 V2-1: this is the load-bearing safety property - a beta-API
 // surprise (or anything else going wrong) must never fail the core pipeline.
-test('handler never throws, even when a dependency does', async () => {
+test('handler never throws, even when a dependency does, and returns talentFlagged: false', async () => {
   adsRepo.findById = async () => {
     throw new Error('simulated DB outage');
   };
   const result = await detectTalent.handler({ adId: 'ad-1' });
-  assert.deepEqual(result, { adId: 'ad-1' });
+  assert.deepEqual(result, { adId: 'ad-1', talentFlagged: false });
 });
 
-test('handler no-ops when the ad has no client_id assigned', async () => {
+test('handler no-ops when the ad has no client_id assigned, talentFlagged: false', async () => {
   adsRepo.findById = async () => ({ id: 'ad-1', client_id: null, tl_video_id: 'v1' });
   let called = false;
   talentReferencesRepo.listActiveByClientId = async () => {
     called = true;
     return [];
   };
-  await detectTalent.handler({ adId: 'ad-1' });
+  const result = await detectTalent.handler({ adId: 'ad-1' });
   assert.equal(called, false);
+  assert.equal(result.talentFlagged, false);
 });
 
 test('handler flags a match against a talent reference with a lapsed contract', async () => {
@@ -64,13 +65,14 @@ test('handler flags a match against a talent reference with a lapsed contract', 
     return detections;
   };
 
-  await detectTalent.handler({ adId: 'ad-1' });
+  const result = await detectTalent.handler({ adId: 'ad-1' });
 
   assert.equal(inserted.adId, 'ad-1');
   assert.equal(inserted.detections.length, 1);
   assert.equal(inserted.detections[0].contractStatusAtDetection, 'expired');
   assert.equal(inserted.detections[0].flagged, true);
   assert.equal(inserted.detections[0].timestampSeconds, 12);
+  assert.equal(result.talentFlagged, true);
 });
 
 test('handler does not flag a match still within contract, and skips non-matching videos', async () => {
@@ -89,9 +91,12 @@ test('handler does not flag a match still within contract, and skips non-matchin
     inserted = detections;
   };
 
-  await detectTalent.handler({ adId: 'ad-1' });
+  const result = await detectTalent.handler({ adId: 'ad-1' });
 
   assert.equal(inserted.length, 1);
   assert.equal(inserted[0].talentReferenceId, 'ref-1');
   assert.equal(inserted[0].flagged, false);
+  // detections exist but none are flagged (still within contract) -
+  // talentFlagged must stay false so it doesn't floor the status.
+  assert.equal(result.talentFlagged, false);
 });

@@ -22,7 +22,7 @@ const ROUTES = {
   'GET /ads/search': searchAds,
   'GET /ads/export': exportAds,
   'GET /ads/{id}': getAdDetail,
-  'POST /ads/{id}/approve': makeTransitionHandler('PUBLISHED'),
+  'POST /ads/{id}/approve': makeTransitionHandler('APPROVED', { triggerPlatformCompliance: true }),
   'POST /ads/{id}/reject': makeTransitionHandler('REJECTED'),
   'POST /ads/{id}/sendback': makeTransitionHandler('SENT_BACK'),
   'POST /ads/{id}/reprocess': reprocessAd,

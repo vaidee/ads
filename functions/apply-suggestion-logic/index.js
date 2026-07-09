@@ -10,10 +10,15 @@ function computeVerdict(rule, confidence) {
   return 'IGNORED';
 }
 
-function computeOverallStatus(verdicts) {
+// v3 status redesign: talentFlagged (from detect-talent, now run before this
+// step) floors an otherwise-clean result at NEEDS_REVIEW - a lapsed/terminated
+// contracted talent detection is a real compliance risk even when every
+// content flag is clean. It never downgrades an existing REJECTED though -
+// REJECT still wins regardless.
+function computeOverallStatus(verdicts, talentFlagged) {
   if (verdicts.includes('REJECT')) return 'REJECTED';
-  if (verdicts.includes('NEEDS_REVIEW')) return 'NEEDS_REVIEW';
-  return 'PUBLISHED'; // SPEC.md 3.2: no flags (or all IGNORED) -> PUBLISHED by default
+  if (verdicts.includes('NEEDS_REVIEW') || talentFlagged) return 'NEEDS_REVIEW';
+  return 'APPROVED'; // SPEC.md 3.2: no flags (or all IGNORED), no talent flag -> APPROVED by default
 }
 
 // SPEC.md 3.1 step 7 / 3.2: per-flag computed_verdict from compliance_rules
@@ -35,7 +40,7 @@ exports.handler = async (event) => {
     })
   );
 
-  return { ...event, computedStatus: computeOverallStatus(verdicts) };
+  return { ...event, computedStatus: computeOverallStatus(verdicts, Boolean(event.talentFlagged)) };
 };
 
 module.exports.computeVerdict = computeVerdict;

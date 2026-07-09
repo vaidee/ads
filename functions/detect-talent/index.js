@@ -14,13 +14,18 @@ function computeContractStatus(talentRef, now) {
   return 'within_contract';
 }
 
-// Inserted between PersistFinal and PipelineSucceeded (tail-end of the
-// pipeline) - talent/contract compliance is advisory/contractual-risk, not a
-// content-safety verdict (SPEC_v2 V2-1: kept visually separate in the UI, and
-// never affects the ad's actual PUBLISHED/REJECTED status). This handler
+// v3 status redesign: moved earlier in the pipeline (now runs before
+// ApplySuggestionLogic instead of after PersistFinal) so a flagged detection
+// can floor the computed status at NEEDS_REVIEW - see
+// apply-suggestion-logic/index.js's computeOverallStatus. Still
+// content-safety-independent/contractual-risk in nature (kept visually
+// separate in the UI), just no longer status-independent. This handler
 // deliberately never throws: a beta-API surprise here (Entity Search,
 // Marengo 3.0, unverified against a live account) must never fail the core
-// ad-review pipeline the way every other pipeline Lambda is allowed to.
+// ad-review pipeline the way every other pipeline Lambda is allowed to -
+// every branch below returns talentFlagged: false on any no-op/error path,
+// so a beta-API hiccup here can only ever fail to detect something, never
+// force a status it didn't earn.
 // Every branch below logs (info, not error) exactly why it stopped - the
 // no-op paths and "searched but found nothing" are all silent to the
 // pipeline by design (see the handler's own no-throw comment), which made
@@ -43,7 +48,7 @@ exports.handler = async (event) => {
           tlVideoId: ad ? ad.tl_video_id : null,
         })
       );
-      return { ...event };
+      return { ...event, talentFlagged: false };
     }
 
     const talentRefs = await talentReferencesRepo.listActiveByClientId(ad.client_id);
@@ -51,7 +56,7 @@ exports.handler = async (event) => {
       console.log(
         JSON.stringify({ event: 'detect_talent_skipped', reason: 'no_active_talent_references', adId: event.adId, clientId: ad.client_id })
       );
-      return { ...event };
+      return { ...event, talentFlagged: false };
     }
 
     const now = new Date();
@@ -103,11 +108,12 @@ exports.handler = async (event) => {
         JSON.stringify({ event: 'detect_talent_no_matches', adId: event.adId, talentReferencesChecked: talentRefs.length })
       );
     }
+
+    return { ...event, talentFlagged: detections.some((d) => d.flagged) };
   } catch (err) {
     console.error(JSON.stringify({ event: 'detect_talent_error', adId: event.adId, message: err.message }));
+    return { ...event, talentFlagged: false };
   }
-
-  return { ...event };
 };
 
 module.exports.computeContractStatus = computeContractStatus;

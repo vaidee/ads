@@ -101,11 +101,21 @@
       "Comment": "Step 6: defensively parse the Pegasus response, persist raw/normalized results",
       "Resource": "${ParseAndPersistFunctionArn}",
       "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
+      "Next": "DetectTalent"
+    },
+    "DetectTalent": {
+      "Type": "Task",
+      "Comment": "v3 status redesign: moved before ApplySuggestionLogic (was tail-end, after PersistFinal) so a flagged detection can floor the computed status at NEEDS_REVIEW - a failure here must still never fail the core pipeline, unlike every other step, so a beta-API surprise can only ever fail to detect something, never block the ad",
+      "Resource": "${DetectTalentFunctionArn}",
+      "Retry": [
+        { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.talentDetectionError", "Next": "ApplySuggestionLogic" }],
       "Next": "ApplySuggestionLogic"
     },
     "ApplySuggestionLogic": {
       "Type": "Task",
-      "Comment": "Step 7: compute per-flag computed_verdict and the overall status from compliance_rules",
+      "Comment": "Step 7: compute per-flag computed_verdict and the overall status from compliance_rules + talentFlagged",
       "Resource": "${ApplySuggestionLogicFunctionArn}",
       "Retry": [
         { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
@@ -121,16 +131,22 @@
         { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2.0 }
       ],
       "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "HandlePipelineError" }],
-      "Next": "DetectTalent"
+      "Next": "PlatformComplianceChoice"
     },
-    "DetectTalent": {
+    "PlatformComplianceChoice": {
+      "Type": "Choice",
+      "Comment": "v3 status redesign: platform-specific compliance now runs automatically, but only once content review reaches APPROVED - never for NEEDS_REVIEW/REJECTED/ERROR",
+      "Choices": [{ "Variable": "$.status", "StringEquals": "APPROVED", "Next": "RunPlatformCompliance" }],
+      "Default": "PipelineSucceeded"
+    },
+    "RunPlatformCompliance": {
       "Type": "Task",
-      "Comment": "SPEC_v2 V2-1: closed-set talent/contract compliance via TwelveLabs Entity Search - advisory only (contractual/legal risk, not a content-safety verdict), so a failure here must never fail the core pipeline, unlike every other step",
-      "Resource": "${DetectTalentFunctionArn}",
+      "Comment": "v3 status redesign: runs all 4 platform-specific Analyze calls - independent, display-only verdicts that never feed back into ads.status, so a failure here must never fail the core pipeline, same principle as DetectTalent",
+      "Resource": "${RunPlatformComplianceFunctionArn}",
       "Retry": [
         { "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2.0 }
       ],
-      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.talentDetectionError", "Next": "PipelineSucceeded" }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.platformComplianceError", "Next": "PipelineSucceeded" }],
       "Next": "PipelineSucceeded"
     },
     "PipelineSucceeded": { "Type": "Succeed" },
