@@ -56,7 +56,7 @@ test('handler flags a match against a talent reference with a lapsed contract', 
   talentReferencesRepo.listActiveByClientId = async () => [
     { id: 'ref-1', tl_entity_id: 'entity-1', status: 'active', contract_end: '2020-01-01' },
   ];
-  twelveLabs.searchEntity = async () => [{ videoId: 'v1', score: 0.9, start: 12.4 }];
+  twelveLabs.searchEntity = async () => ({ hits: [{ videoId: 'v1', score: 0.9, start: 12.4 }], totalResults: 1 });
 
   let inserted = null;
   talentDetectionsRepo.bulkInsert = async (adId, detections) => {
@@ -80,7 +80,9 @@ test('handler does not flag a match still within contract, and skips non-matchin
     { id: 'ref-2', tl_entity_id: 'entity-2', status: 'active', contract_end: null },
   ];
   twelveLabs.searchEntity = async (indexId, entityId) =>
-    entityId === 'entity-1' ? [{ videoId: 'v1', score: 0.8, start: 5 }] : [{ videoId: 'some-other-video', score: 0.9, start: 1 }];
+    entityId === 'entity-1'
+      ? { hits: [{ videoId: 'v1', score: 0.8, start: 5 }], totalResults: 1 }
+      : { hits: [{ videoId: 'some-other-video', score: 0.9, start: 1 }], totalResults: 1 };
 
   let inserted = null;
   talentDetectionsRepo.bulkInsert = async (adId, detections) => {
