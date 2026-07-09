@@ -115,6 +115,10 @@ async function semanticSearch(indexId, query) {
   form.append('query_text', query);
   form.append('search_options', 'visual');
   form.append('search_options', 'audio');
+  // Raised from the API's default (10) to its documented max, so a hit
+  // further down the ranking isn't silently truncated out of the response -
+  // see searchEntity below for the live case that surfaced this.
+  form.append('page_limit', '50');
   const result = await request('POST', '/search', form, { isFormData: true });
   return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score }));
 }
@@ -132,8 +136,17 @@ async function searchEntity(indexId, entityId) {
   form.append('index_id', indexId);
   form.append('query_text', `<@${entityId}> appears`);
   form.append('search_options', 'visual');
+  // Live-observed: hitCount landed on exactly 10 across repeated runs against
+  // an index with more than 10 videos - that's the API's default page_limit
+  // truncating the response, not "only 10 videos in the index contain this
+  // entity." Raised to the documented max (50) so a match ranked below the
+  // old default isn't silently dropped. totalResults is returned alongside
+  // hits so a still-truncated response (>50 total) is visible in the logs
+  // rather than looking identical to a genuine no-match.
+  form.append('page_limit', '50');
   const result = await request('POST', '/search', form, { isFormData: true });
-  return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score, start: hit.start }));
+  const hits = (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score, start: hit.start }));
+  return { hits, totalResults: result.page_info ? result.page_info.total_results : null };
 }
 
 // Read-only lookup used by db/import-talent-reference.js to fetch/confirm an

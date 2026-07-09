@@ -58,7 +58,7 @@ exports.handler = async (event) => {
     const detections = [];
 
     for (const talentRef of talentRefs) {
-      const hits = await twelveLabs.searchEntity(process.env.TL_INDEX_ID, talentRef.tl_entity_id);
+      const { hits, totalResults } = await twelveLabs.searchEntity(process.env.TL_INDEX_ID, talentRef.tl_entity_id);
       console.log(
         JSON.stringify({
           event: 'detect_talent_search_result',
@@ -72,6 +72,10 @@ exports.handler = async (event) => {
           talentReferenceId: talentRef.id,
           tlEntityId: talentRef.tl_entity_id,
           hitCount: hits.length,
+          // If this is still less than totalResults, the response is still
+          // being truncated even at the raised page_limit=50 and a real
+          // pagination loop would be needed.
+          totalResults,
           // capped and logged in full - this is a beta, unverified API, so
           // seeing the actual hit shape matters more than log tidiness here.
           hits: hits.slice(0, 5),
