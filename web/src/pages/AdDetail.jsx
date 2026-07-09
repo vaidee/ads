@@ -168,15 +168,30 @@ export default function AdDetail() {
                 ))}
               </div>
               {publishRecords.length > 0 && (
-                <p className="muted">
-                  Last marked: {publishRecords[0].platform} by {publishRecords[0].marked_by} on{' '}
-                  {new Date(publishRecords[0].marked_at).toLocaleString()}
-                  <br />
-                  Platform compliance: {publishRecords[0].platform_verdict || 'pending...'}
+                <div>
+                  <p className="muted">
+                    Last marked: {publishRecords[0].platform} by {publishRecords[0].marked_by} on{' '}
+                    {new Date(publishRecords[0].marked_at).toLocaleString()}
+                    <br />
+                    Platform compliance: {publishRecords[0].platform_verdict || 'pending...'}
+                  </p>
                   {publishRecords[0].platform_flags && publishRecords[0].platform_flags.length > 0 && (
-                    <span> ({publishRecords[0].platform_flags.length} flag(s))</span>
+                    <div>
+                      {publishRecords[0].platform_flags.map((flag, i) => (
+                        <div key={i} className="finding">
+                          <div className="finding-header">
+                            <span className="timestamp" onClick={() => seekTo(timestampToSeconds(flag.timestamp))}>
+                              {flag.timestamp}
+                            </span>
+                            <span className="category-badge">{flag.category}</span>
+                            <span className="muted">confidence {Number(flag.confidence).toFixed(2)}</span>
+                          </div>
+                          <p>{flag.description}</p>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </p>
+                </div>
               )}
             </div>
           )}
