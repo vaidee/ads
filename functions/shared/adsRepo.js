@@ -122,10 +122,30 @@ async function resetForReindex({ id, tlIndexId, tlTaskStatus }) {
        tl_index_id = $1, tl_task_status = $2, tl_video_id = NULL, status = 'PROCESSING',
        status_reason = NULL, error_message = NULL,
        product_category = NULL, ai_suitability_verdict = NULL, raw_ai_response = NULL,
+       content_metadata = NULL,
        updated_at = now()
      WHERE id = $3
      RETURNING *`,
     [tlIndexId, tlTaskStatus, id]
+  );
+  return result.rows[0] || null;
+}
+
+// Reprocess run where IndexVideo found the video was already successfully
+// indexed in a prior run (tl_video_id already set) - skips re-submitting to
+// TwelveLabs entirely, so unlike resetForReindex this keeps tl_index_id/
+// tl_video_id as-is and only clears the AI/status fields that need to re-run.
+async function resetForReanalysis({ id, tlTaskStatus }) {
+  const result = await db.query(
+    `UPDATE ads SET
+       tl_task_status = $1, status = 'PROCESSING',
+       status_reason = NULL, error_message = NULL,
+       product_category = NULL, ai_suitability_verdict = NULL, raw_ai_response = NULL,
+       content_metadata = NULL,
+       updated_at = now()
+     WHERE id = $2
+     RETURNING *`,
+    [tlTaskStatus, id]
   );
   return result.rows[0] || null;
 }
@@ -282,6 +302,7 @@ module.exports = {
   listForExport,
   insertForIndexing,
   resetForReindex,
+  resetForReanalysis,
   updateIndexingProgress,
   setTlTaskStatus,
   persistAnalysis,
