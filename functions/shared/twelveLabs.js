@@ -103,13 +103,19 @@ async function analyzeVideo(videoUrl, prompt) {
   return result.data;
 }
 
-// FR-12 semantic search fallback.
+// FR-12 semantic search fallback. Like /tasks, /search rejects application/json
+// ("content_type_invalid") and requires multipart/form-data - only discovered
+// live once a query actually fell through to this tier (structured + full-text
+// search apparently never missed in earlier testing). Array fields
+// (search_options) go as repeated form fields, the standard multipart
+// convention, mirroring createIndexingTask's form-building approach.
 async function semanticSearch(indexId, query) {
-  const result = await request('POST', '/search', {
-    index_id: indexId,
-    query_text: query,
-    search_options: ['visual', 'audio'],
-  });
+  const form = new FormData();
+  form.append('index_id', indexId);
+  form.append('query_text', query);
+  form.append('search_options', 'visual');
+  form.append('search_options', 'audio');
+  const result = await request('POST', '/search', form, { isFormData: true });
   return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score }));
 }
 
@@ -119,13 +125,14 @@ async function semanticSearch(indexId, query) {
 // /search endpoint semanticSearch does - Entity Search isn't a separate
 // endpoint, it's the standard search API with the target entity's id embedded
 // in query_text using TwelveLabs' <@entity_id> marker syntax. The index must
-// have Marengo 3.0 enabled for this to work.
+// have Marengo 3.0 enabled for this to work. Same multipart requirement as
+// semanticSearch above.
 async function searchEntity(indexId, entityId) {
-  const result = await request('POST', '/search', {
-    index_id: indexId,
-    query_text: `<@${entityId}> appears`,
-    search_options: ['visual'],
-  });
+  const form = new FormData();
+  form.append('index_id', indexId);
+  form.append('query_text', `<@${entityId}> appears`);
+  form.append('search_options', 'visual');
+  const result = await request('POST', '/search', form, { isFormData: true });
   return (result.data || []).map((hit) => ({ videoId: hit.video_id, score: hit.score, start: hit.start }));
 }
 
