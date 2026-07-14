@@ -15,6 +15,7 @@ export default function Layout({ children }) {
         <span className="brand">Ad Compliance Validator</span>
         <Link to="/">Dashboard</Link>
         <Link to="/upload">Upload</Link>
+        <Link to="/eval">Weekly eval</Link>
         <span className="spacer" />
         <button onClick={handleLogout}>Log out</button>
       </nav>
