@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdDetail from './pages/AdDetail';
 import Upload from './pages/Upload';
+import WeeklyEval from './pages/WeeklyEval';
 
 function RequireAuth({ children }) {
   const location = useLocation();
@@ -39,6 +40,14 @@ export default function App() {
         element={
           <RequireAuth>
             <Upload />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/eval"
+        element={
+          <RequireAuth>
+            <WeeklyEval />
           </RequireAuth>
         }
       />

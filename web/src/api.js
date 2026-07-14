@@ -60,7 +60,7 @@ export const api = {
   publish: (id, platform) => request('POST', `/ads/${id}/publish`, { body: { platform } }),
   createUploadUrl: (filename, durationSeconds) =>
     request('POST', '/ads/upload-url', { body: { filename, duration_seconds: durationSeconds } }),
-  weeklyEval: () => request('GET', '/eval/weekly'),
+  weeklyEval: (limit) => request('GET', '/eval/weekly', { query: { limit } }),
 
   // FR-13: same filters as listAds, but the browser needs the auth header on
   // the download too, so this can't just be a plain <a href> link.
