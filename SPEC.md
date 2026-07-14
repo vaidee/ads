@@ -273,3 +273,5 @@ API Gateway (HTTP API) + Cognito JWT authorizer on every route → Lambda → Au
 - Ad versioning / resubmission workflow
 - Active (golden-dataset) evaluation pipeline
 - UI surface for `weekly_eval_metrics` (currently query-only via `GET /eval/weekly` or direct SQL)
+
+- 
