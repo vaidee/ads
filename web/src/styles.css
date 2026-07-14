@@ -83,6 +83,50 @@ textarea {
   padding: 1.5rem;
 }
 
+/* Showcase section (How it works / Workflow / Presentation) - deliberately
+   distinct from the reviewer tool's own chrome above, since these pages are
+   meant to be shown to an external audience, not part of the daily review
+   workflow. */
+.pitch-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #100d0a;
+}
+
+.pitch-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: #1a1610;
+  border-bottom: 1px solid #34291a;
+}
+
+.pitch-nav a {
+  color: #d8c7a8;
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.pitch-nav a:hover,
+.pitch-nav a:focus-visible {
+  color: #e8c579;
+}
+
+.pitch-brand {
+  font-weight: 700;
+  color: #f2ead9;
+}
+
+.pitch-nav .spacer {
+  flex: 1;
+}
+
+.pitch-main {
+  flex: 1;
+}
+
 .dashboard-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
