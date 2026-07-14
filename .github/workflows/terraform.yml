@@ -2,10 +2,10 @@ name: Terraform
 
 on:
   pull_request:
-    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+    paths: ["terraform/**", "statemachine/**", "functions/**", "web/**", ".github/workflows/terraform.yml"]
   push:
     branches: [main]
-    paths: ["terraform/**", "statemachine/**", "functions/**", ".github/workflows/terraform.yml"]
+    paths: ["terraform/**", "statemachine/**", "functions/**", "web/**", ".github/workflows/terraform.yml"]
   workflow_dispatch: {}
 
 permissions:
