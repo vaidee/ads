@@ -155,7 +155,7 @@ jobs:
     # skips this job silently rather than doing anything destructive.
     if: github.event_name == 'workflow_dispatch' && inputs.confirm_destroy == 'destroy'
     runs-on: ubuntu-latest
-    environment: aws-deploy # same manual reviewer approval gate as apply - configure under repo Settings > Environments
+    environment: aws-destroy # separate approval gate from apply's aws-deploy - create under repo Settings > Environments with its own reviewers
     steps:
       - uses: actions/checkout@v4
 
