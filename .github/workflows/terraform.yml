@@ -13,10 +13,10 @@ on:
         required: false
         default: ''
       skip_final_snapshot:
-        description: "Skip the Aurora final snapshot on destroy (default: false - a snapshot is taken)"
+        description: "Skip terraform's own final snapshot on cluster delete (default: true - the destroy job already snapshots + exports to S3 before this point, so this would just be a redundant extra RDS snapshot)"
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   id-token: write # required to request the GitHub OIDC token
@@ -155,6 +155,7 @@ jobs:
     # skips this job silently rather than doing anything destructive.
     if: github.event_name == 'workflow_dispatch' && inputs.confirm_destroy == 'destroy'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: aws-destroy # separate approval gate from apply's aws-deploy - create under repo Settings > Environments with its own reviewers
     steps:
       - uses: actions/checkout@v4
@@ -187,6 +188,69 @@ jobs:
             -backend-config="dynamodb_table=${{ vars.TF_STATE_DYNAMODB_TABLE }}"
         working-directory: terraform
 
+      # Snapshot the cluster and export it to the dedicated backup bucket
+      # (terraform/rds_backup.tf) - GitHub-hosted runners have no network
+      # path into the VPC, so this uses RDS's native snapshot-export-to-S3
+      # (control-plane only) rather than pg_dump. Polls export status with a
+      # bounded number of attempts rather than looping forever if something
+      # goes wrong.
+      - name: Snapshot Aurora and export it to S3
+        run: |
+          set -e
+          TS=$(date +%Y%m%d%H%M%S)
+          SNAPSHOT_ID="ads-ingest-teardown-$TS"
+          EXPORT_ID="ads-ingest-teardown-export-$TS"
+
+          echo "Creating snapshot $SNAPSHOT_ID..."
+          aws rds create-db-cluster-snapshot \
+            --db-cluster-identifier ads-ingest-aurora \
+            --db-cluster-snapshot-identifier "$SNAPSHOT_ID"
+          aws rds wait db-cluster-snapshot-available --db-cluster-snapshot-identifier "$SNAPSHOT_ID"
+
+          SNAPSHOT_ARN=$(aws rds describe-db-cluster-snapshots \
+            --db-cluster-snapshot-identifier "$SNAPSHOT_ID" \
+            --query 'DBClusterSnapshots[0].DBClusterSnapshotArn' --output text)
+          BACKUP_BUCKET=$(terraform output -raw rds_backup_bucket_name)
+          EXPORT_ROLE_ARN=$(terraform output -raw rds_export_role_arn)
+          KMS_KEY_ID=$(terraform output -raw rds_backup_kms_key_id)
+
+          echo "Exporting $SNAPSHOT_ID to s3://$BACKUP_BUCKET..."
+          aws rds start-export-task \
+            --export-task-identifier "$EXPORT_ID" \
+            --source-arn "$SNAPSHOT_ARN" \
+            --s3-bucket-name "$BACKUP_BUCKET" \
+            --iam-role-arn "$EXPORT_ROLE_ARN" \
+            --kms-key-id "$KMS_KEY_ID"
+
+          echo "Waiting for the export to complete..."
+          for i in $(seq 1 90); do
+            STATUS=$(aws rds describe-export-tasks --export-task-identifier "$EXPORT_ID" --query 'ExportTasks[0].Status' --output text)
+            echo "  [$i/90] export status: $STATUS"
+            case "$STATUS" in
+              COMPLETE) break ;;
+              CANCELED|FAILED) echo "Export task ended with status $STATUS"; exit 1 ;;
+            esac
+            if [ "$i" -eq 90 ]; then echo "Export did not complete in time"; exit 1; fi
+            sleep 30
+          done
+        working-directory: terraform
+
+      # The backup bucket and its KMS key must survive the destroy below, or
+      # the export we just took becomes permanently unreadable (RDS export
+      # requires a customer-managed key, and once it's gone the encrypted
+      # files can never be decrypted) - detaching them from state leaves the
+      # real AWS resources untouched while `terraform destroy` no longer
+      # knows they exist. The export IAM role isn't needed to read the
+      # backup back later, so it's left in state and destroyed normally.
+      - name: Detach the backup bucket and its KMS key from Terraform state
+        run: |
+          set -e
+          terraform state rm aws_s3_bucket_public_access_block.rds_backup
+          terraform state rm aws_s3_bucket.rds_backup
+          terraform state rm aws_kms_alias.rds_backup
+          terraform state rm aws_kms_key.rds_backup
+        working-directory: terraform
+
       # aws_s3_bucket.web has no force_destroy, and always has objects in it
       # (the built UI) - terraform destroy fails with BucketNotEmpty otherwise.
       - name: Empty the web bucket
@@ -207,4 +271,8 @@ jobs:
           TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
           TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
           TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
+          # The export above already captured the data - terraform's own
+          # final-snapshot-on-delete would just be a redundant, separately
+          # billed RDS snapshot, so this defaults to skipping it.
+          TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
           TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
