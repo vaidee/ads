@@ -21,6 +21,16 @@ variable "tl_api_base_url" {
 
 resource "aws_secretsmanager_secret" "tl_api_key" {
   name = "${var.name_prefix}-tl-api-key"
+  # Without this, deleting the secret (a normal `terraform destroy`, not
+  # just the teardown workflow) only schedules it for deletion - AWS keeps
+  # it in a recovery window (30 days by default) during which the name is
+  # reserved and a fresh `aws_secretsmanager_secret` with the same name
+  # fails to create with "already scheduled for deletion". This secret just
+  # mirrors a value supplied fresh at every apply (TF_VAR_tl_api_key, from a
+  # GitHub Actions secret) - there's nothing here that recovery would ever
+  # be needed for, so skip the window and let re-create-after-destroy work
+  # immediately.
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "tl_api_key" {
