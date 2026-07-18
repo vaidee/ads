@@ -213,6 +213,15 @@ jobs:
           BACKUP_BUCKET=$(terraform output -raw rds_backup_bucket_name)
           EXPORT_ROLE_ARN=$(terraform output -raw rds_export_role_arn)
           KMS_KEY_ID=$(terraform output -raw rds_backup_kms_key_id)
+          KMS_ALIAS_NAME=$(terraform output -raw rds_backup_kms_alias_name)
+
+          # Captured now, while these resources are still in state and
+          # `terraform output` can resolve them - the re-import step after
+          # destroy runs against a state that no longer has them, so it
+          # can't look these up itself.
+          echo "BACKUP_BUCKET=$BACKUP_BUCKET" >> "$GITHUB_ENV"
+          echo "KMS_KEY_ID=$KMS_KEY_ID" >> "$GITHUB_ENV"
+          echo "KMS_ALIAS_NAME=$KMS_ALIAS_NAME" >> "$GITHUB_ENV"
 
           echo "Exporting $SNAPSHOT_ID to s3://$BACKUP_BUCKET..."
           aws rds start-export-task \
@@ -275,4 +284,25 @@ jobs:
           # final-snapshot-on-delete would just be a redundant, separately
           # billed RDS snapshot, so this defaults to skipping it.
           TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
-          TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
+
+      # Re-attach the bucket/key to state now that everything else is gone,
+      # so the state file ends this run in a self-consistent condition - the
+      # next `terraform apply` sees them as already-existing/unchanged
+      # rather than failing with "already exists".
+      - name: Re-import the backup bucket and KMS key into state
+        run: |
+          set -e
+          terraform import aws_s3_bucket.rds_backup "$BACKUP_BUCKET"
+          terraform import aws_s3_bucket_public_access_block.rds_backup "$BACKUP_BUCKET"
+          terraform import aws_kms_key.rds_backup "$KMS_KEY_ID"
+          terraform import aws_kms_alias.rds_backup "$KMS_ALIAS_NAME"
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_aurora_subnet_ids: ${{ vars.AURORA_SUBNET_IDS }}
+          TF_VAR_db_subnet_ids: ${{ vars.DB_SUBNET_IDS }}
+          TF_VAR_nat_subnet_ids: ${{ vars.NAT_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}

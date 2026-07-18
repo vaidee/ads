@@ -7,10 +7,11 @@
 # need to survive (only needed during the export itself, not to read the
 # data back later), so it's destroyed normally along with everything else.
 #
-# NOTE: because the bucket/key are removed from state rather than deleted,
-# re-running `terraform apply` after a teardown to rebuild the stack from
-# scratch will fail on these two resources ("already exists") until they're
-# `terraform import`-ed back in, or var.name_prefix changes.
+# The same destroy job re-imports the bucket/key back into state right
+# after `terraform destroy` finishes, so the state file always ends a
+# teardown in a self-consistent condition - the next `terraform apply`
+# (a fresh stand-up) sees them as already-existing/unchanged and builds
+# everything else around them, rather than failing with "already exists".
 
 resource "aws_kms_key" "rds_backup" {
   description             = "Encrypts the Aurora snapshot export to S3 - RDS requires a customer-managed key for this; the AWS-managed default key isn't allowed."
@@ -84,4 +85,8 @@ output "rds_export_role_arn" {
 
 output "rds_backup_kms_key_id" {
   value = aws_kms_key.rds_backup.key_id
+}
+
+output "rds_backup_kms_alias_name" {
+  value = aws_kms_alias.rds_backup.name
 }
