@@ -69,23 +69,21 @@ data "aws_iam_policy_document" "rds_export" {
     resources = ["arn:aws:s3:::${var.tf_state_bucket}/${local.rds_backup_s3_prefix}*"]
   }
   statement {
-    actions   = ["s3:ListBucket"]
-    resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = ["${local.rds_backup_s3_prefix}*"]
-    }
-  }
-  statement {
-    # GetBucketLocation has no "prefix" concept - a request for it never
-    # populates the s3:prefix condition key, so bundling it into the
-    # ListBucket statement above (with that condition attached) silently
-    # blocks it instead of granting it. Needs its own unconditional
-    # statement. It's bucket-metadata-only (just returns the bucket's
-    # region), so granting it without a prefix restriction doesn't leak
-    # anything about the bucket's contents.
-    actions   = ["s3:GetBucketLocation"]
+    # No s3:prefix condition here (unlike the object-level statement above).
+    # Tried scoping this to the backup prefix via an s3:prefix StringLike
+    # condition first, but the export task's internal S3 calls don't
+    # reliably populate that condition key on every request they make
+    # (confirmed first for GetBucketLocation, which has no prefix concept at
+    # all; then again for a ListObjectsV2 call the export task makes that
+    # also came back denied under the same condition) - AWS's own documented
+    # IAM policy for RDS/Aurora snapshot-export-to-S3 grants ListBucket
+    # unconditionally on the whole bucket for exactly this reason, so we
+    # match that rather than keep discovering more internal calls the
+    # condition happens to break. This only lets the role list object
+    # *keys/metadata* bucket-wide (including alongside the .tfstate keys),
+    # not read their content - object read/write stays scoped to the backup
+    # prefix via the statement above.
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
     resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
   }
   statement {
