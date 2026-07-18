@@ -241,3 +241,32 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
   role   = aws_iam_role.github_actions_deploy.id
   policy = data.aws_iam_policy_document.github_actions_deploy.json
 }
+
+# These three resources ARE the trust chain that every CI job - including the
+# destroy job's own `terraform destroy` - authenticates with. Never let an
+# automated `terraform destroy` touch them: AWS invalidates a role's
+# temporary STS credentials the instant the role/its OIDC trust is deleted,
+# even mid-TTL, so if `terraform destroy` reaches these before it's finished
+# destroying everything else (and before its final state-upload PutObject to
+# S3), every subsequent AWS call - including that state upload - starts
+# failing with InvalidClientTokenId/InvalidAccessKeyId. That's a real
+# incident that happened here: the destroy job deleted these, then couldn't
+# confirm the RDS instance/proxy had finished deleting, couldn't persist the
+# updated state to S3, and left CI itself unable to authenticate for any
+# future run. See .github/workflows/terraform.yml's destroy job, which
+# excludes these from `terraform destroy` the same way rds_backup.tf's KMS
+# key is excluded (`terraform state rm` before, `terraform import` after) -
+# these outputs exist so that job can capture stable import identifiers
+# while they're still in state, before detaching them.
+output "github_actions_role_name" {
+  value = aws_iam_role.github_actions_deploy.name
+}
+
+output "github_actions_role_policy_import_id" {
+  # aws_iam_role_policy's import ID format is "role_name:policy_name".
+  value = "${aws_iam_role.github_actions_deploy.name}:${aws_iam_role_policy.github_actions_deploy.name}"
+}
+
+output "github_actions_oidc_provider_arn" {
+  value = aws_iam_openid_connect_provider.github_actions.arn
+}
