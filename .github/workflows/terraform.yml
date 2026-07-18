@@ -252,11 +252,34 @@ jobs:
       # untouched while `terraform destroy` no longer knows it exists. The
       # export IAM role isn't needed to read the backup back later, so it's
       # left in state and destroyed normally.
-      - name: Detach the KMS key from Terraform state
+      #
+      # The GitHub Actions OIDC provider/role/policy (terraform/github_oidc.tf)
+      # must ALSO survive, for a sharper reason: they're the trust chain this
+      # very job authenticated with. A prior run destroyed them mid-`terraform
+      # destroy`, which instantly invalidated this job's own STS credentials
+      # (AWS does that the moment the underlying role/trust is deleted, no
+      # matter the token's remaining TTL) - every AWS call after that point,
+      # including the final state upload to S3, started failing with
+      # InvalidClientTokenId/InvalidAccessKeyId, and left CI unable to
+      # authenticate for any future run at all. Detaching them here the same
+      # way as the KMS key prevents that from ever happening again.
+      - name: Detach the KMS key and CI's own OIDC/IAM resources from Terraform state
         run: |
           set -e
+
+          # Captured now, while these are still in state and `terraform
+          # output` can resolve them - the re-import step after destroy runs
+          # against a state that no longer has them, so it can't look these
+          # up itself.
+          echo "GH_ROLE_NAME=$(terraform output -raw github_actions_role_name)" >> "$GITHUB_ENV"
+          echo "GH_ROLE_POLICY_IMPORT_ID=$(terraform output -raw github_actions_role_policy_import_id)" >> "$GITHUB_ENV"
+          echo "GH_OIDC_PROVIDER_ARN=$(terraform output -raw github_actions_oidc_provider_arn)" >> "$GITHUB_ENV"
+
           terraform state rm aws_kms_alias.rds_backup
           terraform state rm aws_kms_key.rds_backup
+          terraform state rm aws_iam_role_policy.github_actions_deploy
+          terraform state rm aws_iam_role.github_actions_deploy
+          terraform state rm aws_iam_openid_connect_provider.github_actions
         working-directory: terraform
 
       # aws_s3_bucket.web has no force_destroy, and always has objects in it
@@ -284,15 +307,18 @@ jobs:
           # billed RDS snapshot, so this defaults to skipping it.
           TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
 
-      # Re-attach the KMS key to state now that everything else is gone, so
-      # the state file ends this run in a self-consistent condition - the
-      # next `terraform apply` sees it as already-existing/unchanged rather
-      # than failing with "already exists".
-      - name: Re-import the KMS key into state
+      # Re-attach the KMS key and CI's own OIDC/IAM resources to state now
+      # that everything else is gone, so the state file ends this run in a
+      # self-consistent condition - the next `terraform apply` sees them as
+      # already-existing/unchanged rather than failing with "already exists".
+      - name: Re-import the KMS key and CI's own OIDC/IAM resources into state
         run: |
           set -e
           terraform import aws_kms_key.rds_backup "$KMS_KEY_ID"
           terraform import aws_kms_alias.rds_backup "$KMS_ALIAS_NAME"
+          terraform import aws_iam_role.github_actions_deploy "$GH_ROLE_NAME"
+          terraform import aws_iam_role_policy.github_actions_deploy "$GH_ROLE_POLICY_IMPORT_ID"
+          terraform import aws_iam_openid_connect_provider.github_actions "$GH_OIDC_PROVIDER_ARN"
         working-directory: terraform
         env:
           TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
