@@ -189,9 +189,12 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     # the account's default AWS-managed KMS keys (aws/rds, aws/secretsmanager)
     # - even for the default key, the calling principal still needs its own
     # identity-based KMS permissions, not just the key's resource policy.
+    # Also covers the customer-managed key in rds_backup.tf, used for the
+    # snapshot-export-to-S3 step in the destroy workflow - RetireGrant is for
+    # that export task's own grant lifecycle on the key.
     sid = "Kms"
     actions = [
-      "kms:DescribeKey", "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant",
+      "kms:DescribeKey", "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant", "kms:RetireGrant",
       "kms:Decrypt", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext",
       "kms:ListAliases", "kms:ListKeys",
     ]
