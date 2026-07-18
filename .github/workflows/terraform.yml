@@ -6,7 +6,17 @@ on:
   push:
     branches: [main]
     paths: ["terraform/**", "statemachine/**", "functions/**", "web/**", ".github/workflows/terraform.yml"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "destroy" to run terraform destroy. Leave blank for a normal manual plan.'
+        required: false
+        default: ''
+      skip_final_snapshot:
+        description: "Skip the Aurora final snapshot on destroy (default: false - a snapshot is taken)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write # required to request the GitHub OIDC token
@@ -137,3 +147,64 @@ jobs:
           TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
           TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
           TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
+
+  destroy:
+    name: terraform destroy
+    # Manual-only, and only when the operator typed the exact confirmation
+    # phrase into the workflow_dispatch input - a blank/mistyped value just
+    # skips this job silently rather than doing anything destructive.
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm_destroy == 'destroy'
+    runs-on: ubuntu-latest
+    environment: aws-destroy # separate approval gate from apply's aws-deploy - create under repo Settings > Environments with its own reviewers
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Build Lambda bundles
+        run: |
+          set -e
+          for fn in trigger-ingest index-video check-indexing-status run-compliance-analysis \
+                    parse-and-persist apply-suggestion-logic persist-final handle-pipeline-error \
+                    weekly-eval run-platform-compliance detect-talent api; do
+            npx esbuild "functions/$fn/index.js" --bundle --platform=node --target=node20 \
+              --external:@aws-sdk/* --outfile="terraform/dist/$fn/index.js"
+          done
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.TF_STATE_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_STATE_DYNAMODB_TABLE }}"
+        working-directory: terraform
+
+      # aws_s3_bucket.web has no force_destroy, and always has objects in it
+      # (the built UI) - terraform destroy fails with BucketNotEmpty otherwise.
+      - name: Empty the web bucket
+        run: |
+          set -e
+          BUCKET=$(terraform output -raw web_bucket_name)
+          aws s3 rm "s3://$BUCKET" --recursive
+        working-directory: terraform
+
+      - run: terraform destroy -input=false -auto-approve
+        working-directory: terraform
+        env:
+          TF_VAR_ingest_bucket_name: ${{ vars.INGEST_BUCKET_NAME }}
+          TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+          TF_VAR_aurora_subnet_ids: ${{ vars.AURORA_SUBNET_IDS }}
+          TF_VAR_db_subnet_ids: ${{ vars.DB_SUBNET_IDS }}
+          TF_VAR_nat_subnet_ids: ${{ vars.NAT_SUBNET_IDS }}
+          TF_VAR_vpc_security_group_ids: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+          TF_VAR_tl_index_id: ${{ vars.TL_INDEX_ID }}
+          TF_VAR_tl_api_key: ${{ secrets.TL_API_KEY }}
+          TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
