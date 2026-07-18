@@ -188,12 +188,12 @@ jobs:
             -backend-config="dynamodb_table=${{ vars.TF_STATE_DYNAMODB_TABLE }}"
         working-directory: terraform
 
-      # Snapshot the cluster and export it to the dedicated backup bucket
-      # (terraform/rds_backup.tf) - GitHub-hosted runners have no network
-      # path into the VPC, so this uses RDS's native snapshot-export-to-S3
-      # (control-plane only) rather than pg_dump. Polls export status with a
-      # bounded number of attempts rather than looping forever if something
-      # goes wrong.
+      # Snapshot the cluster and export it under a dedicated prefix in the
+      # existing Terraform state bucket (terraform/rds_backup.tf) rather than
+      # a new bucket - GitHub-hosted runners have no network path into the
+      # VPC, so this uses RDS's native snapshot-export-to-S3 (control-plane
+      # only) rather than pg_dump. Polls export status with a bounded number
+      # of attempts rather than looping forever if something goes wrong.
       - name: Snapshot Aurora and export it to S3
         run: |
           set -e
@@ -211,23 +211,24 @@ jobs:
             --db-cluster-snapshot-identifier "$SNAPSHOT_ID" \
             --query 'DBClusterSnapshots[0].DBClusterSnapshotArn' --output text)
           BACKUP_BUCKET=$(terraform output -raw rds_backup_bucket_name)
+          BACKUP_PREFIX=$(terraform output -raw rds_backup_s3_prefix)
           EXPORT_ROLE_ARN=$(terraform output -raw rds_export_role_arn)
           KMS_KEY_ID=$(terraform output -raw rds_backup_kms_key_id)
           KMS_ALIAS_NAME=$(terraform output -raw rds_backup_kms_alias_name)
 
-          # Captured now, while these resources are still in state and
+          # Captured now, while the KMS key/alias are still in state and
           # `terraform output` can resolve them - the re-import step after
           # destroy runs against a state that no longer has them, so it
           # can't look these up itself.
-          echo "BACKUP_BUCKET=$BACKUP_BUCKET" >> "$GITHUB_ENV"
           echo "KMS_KEY_ID=$KMS_KEY_ID" >> "$GITHUB_ENV"
           echo "KMS_ALIAS_NAME=$KMS_ALIAS_NAME" >> "$GITHUB_ENV"
 
-          echo "Exporting $SNAPSHOT_ID to s3://$BACKUP_BUCKET..."
+          echo "Exporting $SNAPSHOT_ID to s3://$BACKUP_BUCKET/$BACKUP_PREFIX$EXPORT_ID/..."
           aws rds start-export-task \
             --export-task-identifier "$EXPORT_ID" \
             --source-arn "$SNAPSHOT_ARN" \
             --s3-bucket-name "$BACKUP_BUCKET" \
+            --s3-prefix "$BACKUP_PREFIX$EXPORT_ID/" \
             --iam-role-arn "$EXPORT_ROLE_ARN" \
             --kms-key-id "$KMS_KEY_ID"
 
@@ -244,18 +245,16 @@ jobs:
           done
         working-directory: terraform
 
-      # The backup bucket and its KMS key must survive the destroy below, or
-      # the export we just took becomes permanently unreadable (RDS export
-      # requires a customer-managed key, and once it's gone the encrypted
-      # files can never be decrypted) - detaching them from state leaves the
-      # real AWS resources untouched while `terraform destroy` no longer
-      # knows they exist. The export IAM role isn't needed to read the
-      # backup back later, so it's left in state and destroyed normally.
-      - name: Detach the backup bucket and its KMS key from Terraform state
+      # The KMS key must survive the destroy below, or the export we just
+      # took becomes permanently unreadable (RDS export requires a
+      # customer-managed key, and once it's gone the encrypted files can
+      # never be decrypted) - detaching it from state leaves the real key
+      # untouched while `terraform destroy` no longer knows it exists. The
+      # export IAM role isn't needed to read the backup back later, so it's
+      # left in state and destroyed normally.
+      - name: Detach the KMS key from Terraform state
         run: |
           set -e
-          terraform state rm aws_s3_bucket_public_access_block.rds_backup
-          terraform state rm aws_s3_bucket.rds_backup
           terraform state rm aws_kms_alias.rds_backup
           terraform state rm aws_kms_key.rds_backup
         working-directory: terraform
@@ -285,15 +284,13 @@ jobs:
           # billed RDS snapshot, so this defaults to skipping it.
           TF_VAR_skip_final_snapshot: ${{ inputs.skip_final_snapshot }}
 
-      # Re-attach the bucket/key to state now that everything else is gone,
-      # so the state file ends this run in a self-consistent condition - the
-      # next `terraform apply` sees them as already-existing/unchanged
-      # rather than failing with "already exists".
-      - name: Re-import the backup bucket and KMS key into state
+      # Re-attach the KMS key to state now that everything else is gone, so
+      # the state file ends this run in a self-consistent condition - the
+      # next `terraform apply` sees it as already-existing/unchanged rather
+      # than failing with "already exists".
+      - name: Re-import the KMS key into state
         run: |
           set -e
-          terraform import aws_s3_bucket.rds_backup "$BACKUP_BUCKET"
-          terraform import aws_s3_bucket_public_access_block.rds_backup "$BACKUP_BUCKET"
           terraform import aws_kms_key.rds_backup "$KMS_KEY_ID"
           terraform import aws_kms_alias.rds_backup "$KMS_ALIAS_NAME"
         working-directory: terraform

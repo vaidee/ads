@@ -220,16 +220,6 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     resources = ["arn:aws:s3:::${var.name_prefix}-web-*", "arn:aws:s3:::${var.name_prefix}-web-*/*"]
   }
   statement {
-    # Scoped to just the RDS backup bucket (rds_backup.tf) - same full-control
-    # shape as WebBucket above, for the same reason (Terraform owns this
-    # bucket outright). Missing entirely at first, which is what caused
-    # s3:CreateBucket AccessDenied on the first apply after rds_backup.tf was
-    # added - WebBucket's resource pattern doesn't match this bucket's name.
-    sid       = "RdsBackupBucket"
-    actions   = ["s3:*"]
-    resources = ["arn:aws:s3:::${var.name_prefix}-rds-backup-*", "arn:aws:s3:::${var.name_prefix}-rds-backup-*/*"]
-  }
-  statement {
     sid       = "CloudFront"
     actions   = ["cloudfront:*"]
     resources = ["*"]
