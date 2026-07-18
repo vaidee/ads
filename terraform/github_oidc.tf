@@ -189,14 +189,20 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     # the account's default AWS-managed KMS keys (aws/rds, aws/secretsmanager)
     # - even for the default key, the calling principal still needs its own
     # identity-based KMS permissions, not just the key's resource policy.
-    # Also covers the customer-managed key in rds_backup.tf, used for the
-    # snapshot-export-to-S3 step in the destroy workflow - RetireGrant is for
-    # that export task's own grant lifecycle on the key.
+    # Also covers full lifecycle management of the customer-managed key +
+    # alias in rds_backup.tf (CreateKey/CreateAlias and friends were missing
+    # here initially - the original set only covered *using* an existing
+    # key, not creating a new one, which is exactly what a first `terraform
+    # apply` of rds_backup.tf needs to do).
     sid = "Kms"
     actions = [
       "kms:DescribeKey", "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant", "kms:RetireGrant",
       "kms:Decrypt", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext",
       "kms:ListAliases", "kms:ListKeys",
+      "kms:CreateKey", "kms:TagResource", "kms:UntagResource", "kms:ListResourceTags",
+      "kms:PutKeyPolicy", "kms:GetKeyPolicy", "kms:EnableKeyRotation", "kms:GetKeyRotationStatus",
+      "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion",
+      "kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias",
     ]
     resources = ["*"]
   }
@@ -212,6 +218,16 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     sid       = "WebBucket"
     actions   = ["s3:*"]
     resources = ["arn:aws:s3:::${var.name_prefix}-web-*", "arn:aws:s3:::${var.name_prefix}-web-*/*"]
+  }
+  statement {
+    # Scoped to just the RDS backup bucket (rds_backup.tf) - same full-control
+    # shape as WebBucket above, for the same reason (Terraform owns this
+    # bucket outright). Missing entirely at first, which is what caused
+    # s3:CreateBucket AccessDenied on the first apply after rds_backup.tf was
+    # added - WebBucket's resource pattern doesn't match this bucket's name.
+    sid       = "RdsBackupBucket"
+    actions   = ["s3:*"]
+    resources = ["arn:aws:s3:::${var.name_prefix}-rds-backup-*", "arn:aws:s3:::${var.name_prefix}-rds-backup-*/*"]
   }
   statement {
     sid       = "CloudFront"
