@@ -69,13 +69,24 @@ data "aws_iam_policy_document" "rds_export" {
     resources = ["arn:aws:s3:::${var.tf_state_bucket}/${local.rds_backup_s3_prefix}*"]
   }
   statement {
-    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    actions   = ["s3:ListBucket"]
     resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
       values   = ["${local.rds_backup_s3_prefix}*"]
     }
+  }
+  statement {
+    # GetBucketLocation has no "prefix" concept - a request for it never
+    # populates the s3:prefix condition key, so bundling it into the
+    # ListBucket statement above (with that condition attached) silently
+    # blocks it instead of granting it. Needs its own unconditional
+    # statement. It's bucket-metadata-only (just returns the bucket's
+    # region), so granting it without a prefix restriction doesn't leak
+    # anything about the bucket's contents.
+    actions   = ["s3:GetBucketLocation"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
   }
   statement {
     # The export role itself (not just the calling CI identity) needs to use
