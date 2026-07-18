@@ -1,17 +1,35 @@
-# Dedicated bucket + KMS key + IAM role for exporting an Aurora snapshot to
-# S3 as part of a full teardown (see .github/workflows/terraform.yml's
-# destroy job). Both the bucket and the key are deliberately detached from
-# Terraform state (`terraform state rm`) right before that job runs
-# `terraform destroy`, so they - and the backup they hold - survive even
-# though the rest of the stack gets torn down. The export IAM role doesn't
-# need to survive (only needed during the export itself, not to read the
-# data back later), so it's destroyed normally along with everything else.
+# KMS key + IAM role for exporting an Aurora snapshot to S3 as part of a
+# full teardown (see .github/workflows/terraform.yml's destroy job).
+# Reuses the existing Terraform state bucket (var.tf_state_bucket) as the
+# export destination, under a dedicated prefix, rather than provisioning a
+# new bucket - avoids needing a whole new s3:CreateBucket grant, and that
+# bucket already exists outside this Terraform run (same "existing,
+# referenced by variable, not created here" pattern as var.ingest_bucket_name).
 #
-# The same destroy job re-imports the bucket/key back into state right
-# after `terraform destroy` finishes, so the state file always ends a
-# teardown in a self-consistent condition - the next `terraform apply`
-# (a fresh stand-up) sees them as already-existing/unchanged and builds
-# everything else around them, rather than failing with "already exists".
+# The KMS key is deliberately detached from Terraform state
+# (`terraform state rm`) right before the destroy job runs
+# `terraform destroy`, so it - and the backup encrypted with it - survives
+# even though the rest of the stack gets torn down. Losing this key would
+# make the exported files permanently unreadable even though they're still
+# sitting in S3. The export IAM role doesn't need to survive (only needed
+# during the export itself, not to read the backup back later), so it's
+# destroyed normally along with everything else.
+#
+# The same destroy job re-imports the key back into state right after
+# `terraform destroy` finishes, so the state file always ends a teardown in
+# a self-consistent condition - the next `terraform apply` (a fresh
+# stand-up) sees it as already-existing/unchanged and builds everything
+# else around it, rather than failing with "already exists".
+#
+# NOTE: AWS requires the export destination bucket to be in the same region
+# as the source snapshot. Confirm var.tf_state_region matches the region
+# this stack's other resources actually deploy into (vars.AWS_REGION in
+# .github/workflows/terraform.yml) - if they differ, the export step in the
+# destroy job will fail.
+
+locals {
+  rds_backup_s3_prefix = "rds-backups/"
+}
 
 resource "aws_kms_key" "rds_backup" {
   description             = "Encrypts the Aurora snapshot export to S3 - RDS requires a customer-managed key for this; the AWS-managed default key isn't allowed."
@@ -21,18 +39,6 @@ resource "aws_kms_key" "rds_backup" {
 resource "aws_kms_alias" "rds_backup" {
   name          = "alias/${var.name_prefix}-rds-backup"
   target_key_id = aws_kms_key.rds_backup.key_id
-}
-
-resource "aws_s3_bucket" "rds_backup" {
-  bucket = "${var.name_prefix}-rds-backup-${data.aws_caller_identity.current.account_id}"
-}
-
-resource "aws_s3_bucket_public_access_block" "rds_backup" {
-  bucket                  = aws_s3_bucket.rds_backup.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
 }
 
 # The service performing the export (not the CI role) assumes this - RDS
@@ -54,11 +60,22 @@ resource "aws_iam_role" "rds_export" {
 
 data "aws_iam_policy_document" "rds_export" {
   statement {
+    # Scoped to just the backup prefix within the state bucket, not the
+    # whole bucket - this role has no business touching the actual .tfstate
+    # objects living alongside it.
     actions = [
-      "s3:PutObject", "s3:PutObjectAcl", "s3:GetObject", "s3:ListBucket",
-      "s3:GetBucketLocation", "s3:DeleteObject",
+      "s3:PutObject", "s3:PutObjectAcl", "s3:GetObject", "s3:DeleteObject",
     ]
-    resources = [aws_s3_bucket.rds_backup.arn, "${aws_s3_bucket.rds_backup.arn}/*"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}/${local.rds_backup_s3_prefix}*"]
+  }
+  statement {
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}"]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["${local.rds_backup_s3_prefix}*"]
+    }
   }
   statement {
     # The export role itself (not just the calling CI identity) needs to use
@@ -76,7 +93,11 @@ resource "aws_iam_role_policy" "rds_export" {
 }
 
 output "rds_backup_bucket_name" {
-  value = aws_s3_bucket.rds_backup.id
+  value = var.tf_state_bucket
+}
+
+output "rds_backup_s3_prefix" {
+  value = local.rds_backup_s3_prefix
 }
 
 output "rds_export_role_arn" {
